@@ -18,12 +18,12 @@ services:
       until psql -U \"\${POSTGRES_USER}\" -d postgres -c 'SELECT 1' >/dev/null 2>&1; do
         sleep 1
       done
-      psql -U \"\${POSTGRES_USER}\" -d \"\${POSTGRES_DB}\" -c 'SELECT 1' >/dev/null 2>&1
-      if [ $? -eq 0 ]; then
-        echo 'Banco de dados já existe.'
-      else
+      # Verificar se o banco de dados já existe e criar se não existir
+      if ! psql -U \"\${POSTGRES_USER}\" -d \"\${POSTGRES_DB}\" -c '\\l' | grep -q \"\${POSTGRES_DB}\"; then
         psql -U \"\${POSTGRES_USER}\" -c 'CREATE DATABASE \"\${POSTGRES_DB}\"'
         echo 'Banco de dados criado.'
+      else
+        echo 'Banco de dados já existe.'
       fi
       wait
       "
