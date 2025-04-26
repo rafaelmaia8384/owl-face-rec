@@ -1,0 +1,40 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres} # Usa valor do .env ou default
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-owlfacerec}
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432" # Mapeia porta do host para o container (opcional)
+
+  app:
+    build:
+      context: .
+    container_name: owl-face-rec
+    restart: unless-stopped
+    depends_on:
+      - db
+    ports:
+      - "${APP_PORT:-3000}:3000" # Mapeia porta do host (do .env ou 3000) para 3000 do container
+    environment:
+      # Configuração da aplicação
+      HOST: "0.0.0.0"
+      PORT: "3000"
+      RUST_LOG: ${RUST_LOG:-info} # Nível de log (do .env ou info)
+
+      # Configuração do Banco de Dados (lido pelo app via std::env::var)
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_HOST: db # Nome do serviço do container do DB
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-owlfacerec}
+
+    volumes:
+      - ./models:/app/models
