@@ -13,12 +13,18 @@ services:
       - "5432:5432" # Mapeia porta do host para o container (opcional)
     command: >
       bash -c "
-      set -e 
+      set -e
       docker-entrypoint.sh postgres &
-      until psql -U "$${POSTGRES_USER}" -d postgres -c 'SELECT 1' >/dev/null 2>&1; do
+      until psql -U \"\${POSTGRES_USER}\" -d postgres -c 'SELECT 1' >/dev/null 2>&1; do
         sleep 1
       done
-      psql -U "$${POSTGRES_USER}" -c 'CREATE DATABASE "$${POSTGRES_DB}"'
+      psql -U \"\${POSTGRES_USER}\" -d \"\${POSTGRES_DB}\" -c 'SELECT 1' >/dev/null 2>&1
+      if [ $? -eq 0 ]; then
+        echo 'Banco de dados já existe.'
+      else
+        psql -U \"\${POSTGRES_USER}\" -c 'CREATE DATABASE \"\${POSTGRES_DB}\"'
+        echo 'Banco de dados criado.'
+      fi
       wait
       "
 
