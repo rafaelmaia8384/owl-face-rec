@@ -1,5 +1,5 @@
 # ---- Estágio de Build ----
-ARG RUST_VERSION=1.78
+ARG RUST_VERSION=1.81
 ARG APP_NAME=owl-face-rec
 FROM rust:${RUST_VERSION}-slim-bullseye AS build
 ARG APP_NAME
