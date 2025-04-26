@@ -1,33 +1,40 @@
 # ---- Estágio de Build (MUSL) ----
-ARG RUST_VERSION=1.81 # Mantenha ou atualize a versão do Rust
+ARG RUST_VERSION=1.81
 ARG APP_NAME=owl-face-rec
-# Usar uma imagem base que tenha as ferramentas necessárias para musl
 FROM rust:${RUST_VERSION}-bullseye AS build
 ARG APP_NAME
 WORKDIR /app
 
-# Instalar dependências para compilação MUSL e libpq
+# 1. Instalar dependências ESSENCIAIS para MUSL + OpenSSL
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends musl-tools libpq-dev build-essential pkg-config && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends \
+    musl-tools \
+    libpq-dev \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Adicionar o target musl
+# 2. Configurar OpenSSL para MUSL
+ENV OPENSSL_DIR=/usr/lib/x86_64-linux-musl/
+ENV OPENSSL_STATIC=1
+ENV PKG_CONFIG_ALLOW_CROSS=1
+
+# 3. Adicionar target MUSL
 RUN rustup target add x86_64-unknown-linux-musl
 
-# Copiar dependências e compilar cache (target musl)
+# 4. Cache de dependências (otimização BuildKit)
 COPY Cargo.toml Cargo.lock ./
 RUN mkdir src && echo "fn main() {println!(\"Dummy\");}" > src/main.rs
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    cargo build --release --target x86_64-unknown-linux-musl && \
-    rm -f target/x86_64-unknown-linux-musl/release/deps/${APP_NAME}-* && \
-    rm src/main.rs
+    cargo build --release --target x86_64-unknown-linux-musl \
+    && rm -f target/x86_64-unknown-linux-musl/release/deps/${APP_NAME}-* \
+    && rm src/main.rs
 
-# Copiar o restante do código fonte
+# 5. Compilação final
 COPY src ./src
 COPY models ./models
-
-# Compilar a aplicação real (target musl)
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo build --release --target x86_64-unknown-linux-musl
@@ -36,32 +43,24 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM alpine:latest AS final
 ARG APP_NAME
 
-# Instalar dependências de tempo de execução mínimas para Alpine
-# libpq (postgresql-libs) e ca-certificates para TLS
+# 6. Dependências mínimas no Alpine
 RUN apk add --no-cache postgresql-libs ca-certificates
 
-# Criar usuário não-root no Alpine
+# 7. Configuração de usuário seguro
 ARG UID=10001
-RUN addgroup -S -g ${UID} appgroup && \
-    adduser -S -u ${UID} -G appgroup -h /app appuser
+RUN addgroup -S -g ${UID} appgroup \
+    && adduser -S -u ${UID} -G appgroup -h /app -D appuser
 
 WORKDIR /app
 
-# Copiar binário compilado (do target musl) e modelos
-COPY --from=build /app/target/x86_64-unknown-linux-musl/release/${APP_NAME} .
-COPY --from=build /app/models ./models
+# 8. Copiar artefatos de build
+COPY --from=build --chown=appuser:appgroup \
+    /app/target/x86_64-unknown-linux-musl/release/${APP_NAME} .
+COPY --from=build --chown=appuser:appgroup \
+    /app/models ./models
 
-# Definir permissões e usuário
-# O diretório já pertence ao appuser devido ao -h /app no adduser
-# RUN chown -R appuser:appgroup /app
+# 9. Configuração final
 USER appuser
-
-# Expor a porta da aplicação (padrão 3000)
 EXPOSE 3000
-
-# Comando para rodar a aplicação
-ENV HOST=0.0.0.0
-ENV PORT=3000
-# Outras variáveis de ambiente via docker-compose
-
-CMD ["/app/owl-face-rec"] 
+ENV HOST=0.0.0.0 PORT=3000 RUST_LOG=info
+CMD ["/app/owl-face-rec"]
