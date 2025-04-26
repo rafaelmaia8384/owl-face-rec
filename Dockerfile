@@ -9,21 +9,34 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     musl-tools \
+    musl-dev \
     libpq-dev \
     build-essential \
     pkg-config \
-    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Configurar OpenSSL para MUSL
-ENV OPENSSL_DIR=/usr/lib/x86_64-linux-musl/
+# 2. Compilar OpenSSL estático para MUSL
+RUN wget https://www.openssl.org/source/openssl-1.1.1w.tar.gz && \
+    tar xzf openssl-1.1.1w.tar.gz && \
+    cd openssl-1.1.1w && \
+    CC="musl-gcc -fPIE -pie" ./Configure no-shared no-zlib -fPIC --prefix=/usr/local/musl linux-x86_64 && \
+    make depend && \
+    make -j$(nproc) && \
+    make install && \
+    cd .. && \
+    rm -rf openssl-1.1.1w*
+
+# 3. Configurar variáveis de ambiente para OpenSSL MUSL
+ENV OPENSSL_DIR=/usr/local/musl
 ENV OPENSSL_STATIC=1
 ENV PKG_CONFIG_ALLOW_CROSS=1
+ENV PKG_CONFIG_PATH=/usr/local/musl/lib/pkgconfig
+ENV RUSTFLAGS="-C target-feature=-crt-static"
 
-# 3. Adicionar target MUSL
+# 4. Adicionar target MUSL
 RUN rustup target add x86_64-unknown-linux-musl
 
-# 4. Cache de dependências (otimização BuildKit)
+# 5. Cache de dependências
 COPY Cargo.toml Cargo.lock ./
 RUN mkdir src && echo "fn main() {println!(\"Dummy\");}" > src/main.rs
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
@@ -32,7 +45,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && rm -f target/x86_64-unknown-linux-musl/release/deps/${APP_NAME}-* \
     && rm src/main.rs
 
-# 5. Compilação final
+# 6. Compilação final
 COPY src ./src
 COPY models ./models
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
@@ -43,23 +56,23 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM alpine:latest AS final
 ARG APP_NAME
 
-# 6. Dependências mínimas no Alpine
+# 7. Dependências mínimas no Alpine
 RUN apk add --no-cache postgresql-libs ca-certificates
 
-# 7. Configuração de usuário seguro
+# 8. Configuração de usuário seguro
 ARG UID=10001
 RUN addgroup -S -g ${UID} appgroup \
     && adduser -S -u ${UID} -G appgroup -h /app -D appuser
 
 WORKDIR /app
 
-# 8. Copiar artefatos de build
+# 9. Copiar artefatos de build
 COPY --from=build --chown=appuser:appgroup \
     /app/target/x86_64-unknown-linux-musl/release/${APP_NAME} .
 COPY --from=build --chown=appuser:appgroup \
     /app/models ./models
 
-# 9. Configuração final
+# 10. Configuração final
 USER appuser
 EXPOSE 3000
 ENV HOST=0.0.0.0 PORT=3000 RUST_LOG=info
