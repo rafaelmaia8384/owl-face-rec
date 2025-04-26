@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     g++ \
+    libssl-dev \
     libstdc++-12-dev \
     && rm -rf /var/lib/apt/lists/*
 COPY . .
@@ -15,7 +16,7 @@ FROM debian:bullseye-slim AS runtime
 WORKDIR /app
 # Install OpenSSL runtime libraries
 RUN apt-get update && apt-get install -y \
-    libssl1.1 \
+    libssl3 \
     libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/owl-face-rec /app/
