@@ -1,76 +1,67 @@
-# ---- Estágio de Build ----
-ARG RUST_VERSION=1.81
+# ---- Estágio de Build (MUSL) ----
+ARG RUST_VERSION=1.81 # Mantenha ou atualize a versão do Rust
 ARG APP_NAME=owl-face-rec
-FROM rust:${RUST_VERSION}-slim-bullseye AS build
+# Usar uma imagem base que tenha as ferramentas necessárias para musl
+FROM rust:${RUST_VERSION}-bullseye AS build
 ARG APP_NAME
 WORKDIR /app
 
-# Instalar dependências do sistema para compilação (ex: para sqlx)
+# Instalar dependências para compilação MUSL e libpq
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libpq-dev build-essential pkg-config cmake && \
+    apt-get install -y --no-install-recommends musl-tools libpq-dev build-essential pkg-config && \
     rm -rf /var/lib/apt/lists/*
 
-# Copiar dependências e compilar cache
+# Adicionar o target musl
+RUN rustup target add x86_64-unknown-linux-musl
+
+# Copiar dependências e compilar cache (target musl)
 COPY Cargo.toml Cargo.lock ./
-# Criar um dummy src/main.rs para compilar apenas as dependências
 RUN mkdir src && echo "fn main() {println!(\"Dummy\");}" > src/main.rs
-# --mount=type=cache... requer BuildKit (habilite DOCKER_BUILDKIT=1)
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    cargo build --release && \
-    rm -f target/release/deps/${APP_NAME}-* && \
+    cargo build --release --target x86_64-unknown-linux-musl && \
+    rm -f target/x86_64-unknown-linux-musl/release/deps/${APP_NAME}-* && \
     rm src/main.rs
 
 # Copiar o restante do código fonte
 COPY src ./src
 COPY models ./models
 
-# Compilar a aplicação real
+# Compilar a aplicação real (target musl)
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    cargo build --release
+    cargo build --release --target x86_64-unknown-linux-musl
 
-# ---- Estágio Final ----
-FROM debian:bullseye-slim AS final
+# ---- Estágio Final (Alpine) ----
+FROM alpine:latest AS final
 ARG APP_NAME
 
-# Instalar dependências de tempo de execução (libpq5 para Postgres)
-# Adicionar ca-certificates para conexões TLS se necessário
-# Adicionar libonnxruntime (se não for baixado pela crate ort - verificar documentação ort)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends libpq5 ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+# Instalar dependências de tempo de execução mínimas para Alpine
+# libpq (postgresql-libs) e ca-certificates para TLS
+RUN apk add --no-cache postgresql-libs ca-certificates
 
-# Criar usuário não-root
+# Criar usuário não-root no Alpine
 ARG UID=10001
-RUN adduser \
-    --disabled-password \
-    --gecos "" \
-    --home "/nonexistent" \
-    --shell "/sbin/nologin" \
-    --no-create-home \
-    --uid "${UID}" \
-    appuser
+RUN addgroup -S -g ${UID} appgroup && \
+    adduser -S -u ${UID} -G appgroup -h /app appuser
 
 WORKDIR /app
 
-# Copiar binário compilado, modelos e configuração
-COPY --from=build /app/target/release/${APP_NAME} .
+# Copiar binário compilado (do target musl) e modelos
+COPY --from=build /app/target/x86_64-unknown-linux-musl/release/${APP_NAME} .
 COPY --from=build /app/models ./models
-# Não copie .env diretamente se contiver segredos - use env vars do docker-compose
-# COPY .env .
 
 # Definir permissões e usuário
-RUN chown -R appuser:appuser /app
+# O diretório já pertence ao appuser devido ao -h /app no adduser
+# RUN chown -R appuser:appgroup /app
 USER appuser
 
 # Expor a porta da aplicação (padrão 3000)
 EXPOSE 3000
 
 # Comando para rodar a aplicação
-# Use HOST=0.0.0.0 para escutar em todas as interfaces dentro do container
 ENV HOST=0.0.0.0
 ENV PORT=3000
-# Defina outras variáveis de ambiente via docker-compose (ex: POSTGRES_USER, etc)
+# Outras variáveis de ambiente via docker-compose
 
 CMD ["/app/owl-face-rec"] 
