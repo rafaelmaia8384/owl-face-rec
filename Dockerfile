@@ -1,28 +1,29 @@
 # ---- Estágio de Build (MUSL) ----
 ARG RUST_VERSION=1.81
 ARG APP_NAME=owl-face-rec
-FROM clux/muslrust:${RUST_VERSION}-stable AS build
+FROM messense/rust-musl-cross:x86_64-musl AS build
 ARG APP_NAME
 WORKDIR /app
 
-# 1. Instalar dependências básicas
+# 1. Instalar dependências adicionais necessárias
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     libpq-dev \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Usar OpenSSL do sistema (já configurado para MUSL na imagem clux/muslrust)
-ENV OPENSSL_DIR=/usr/local/musl
+# 2. Configurar OpenSSL para MUSL (já pré-instalado na imagem)
+ENV OPENSSL_DIR=/usr/include/openssl
 ENV OPENSSL_STATIC=1
 ENV PKG_CONFIG_ALLOW_CROSS=1
+ENV PKG_CONFIG_PATH=/usr/lib/x86_64-linux-musl/pkgconfig
 
 # 3. Cache de dependências
 COPY Cargo.toml Cargo.lock ./
 RUN mkdir src && echo "fn main() {println!(\"Dummy\");}" > src/main.rs
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    cargo build --release --target x86_64-unknown-linux-musl \
+    cargo build --release \
     && rm -f target/x86_64-unknown-linux-musl/release/deps/${APP_NAME}-* \
     && rm src/main.rs
 
@@ -31,7 +32,7 @@ COPY src ./src
 COPY models ./models
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    cargo build --release --target x86_64-unknown-linux-musl
+    cargo build --release
 
 # ---- Estágio Final (Alpine) ----
 FROM alpine:latest AS final
