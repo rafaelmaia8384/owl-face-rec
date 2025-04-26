@@ -5,8 +5,8 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     g++ \
-    libstdc++-dev \  # Changed this line
-&& rm -rf /var/lib/apt/lists/*
+    libstdc++-dev \
+    && rm -rf /var/lib/apt/lists/*
 COPY . .
 RUN cargo build --release
 
