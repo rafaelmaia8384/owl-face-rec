@@ -1,0 +1,1 @@
+Download model arcfaceresnet100-8.onnx to this folder
