@@ -4,7 +4,7 @@ desktop.ini
 
 .env
 
-models/arcfaceresnet100-8.onnx
+models/*.onnx
 
 ## Editor
 *.swp
