@@ -18,6 +18,3 @@ image = "0.25"
 ndarray = "0.15"
 sqlx = { version = "0.8.5", features = ["postgres", "runtime-tokio-native-tls", "uuid"] }
 rayon = "1.10"
-
-[target.'cfg(target_os = "macos")'.dependencies]
-# Add potential macOS specific setup if needed later, for now empty
