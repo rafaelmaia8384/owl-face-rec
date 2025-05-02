@@ -127,6 +127,23 @@ pub async fn register(
     Json(payload): Json<RegisterPayload>,
 ) -> Result<StatusCode, StatusCode> {
     let start = Instant::now(); // Record start time
+
+    // --- Payload Validation ---
+    if payload.target_uuid == Uuid::nil() {
+        // Check if UUID is nil (optional, but good practice)
+        tracing::warn!("Received registration request with nil UUID");
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    if payload.origin.trim().is_empty() {
+        tracing::warn!("Received registration request with empty origin");
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    if payload.image_base64.trim().is_empty() {
+        tracing::warn!("Received registration request with empty image_base64");
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    // --- End Validation ---
+
     let target_uuid = payload.target_uuid;
     let origin = payload.origin.clone();
     tracing::debug!(%target_uuid, %origin, "Received registration request");
@@ -182,6 +199,14 @@ pub async fn search(
     Json(payload): Json<SearchPayload>,
 ) -> Result<Json<SearchResponse>, StatusCode> {
     let start = Instant::now(); // Record start time
+
+    // --- Payload Validation ---
+    if payload.image_base64.trim().is_empty() {
+        tracing::warn!("Received search request with empty image_base64");
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    // --- End Validation ---
+
     tracing::debug!("Received search request");
 
     // Get query embedding using the helper function
