@@ -89,6 +89,7 @@ pub struct ResponsePayload {
 pub struct RegisterPayload {
     target_uuid: Uuid,
     image_base64: String,
+    origin: String,
 }
 
 // Define the request payload for /search/
@@ -109,6 +110,7 @@ pub struct SearchResponse {
 pub struct SearchResult {
     target_uuid: String,
     similarity: f32,
+    origin: String,
 }
 
 // --- Handlers ---
@@ -124,7 +126,8 @@ pub async fn register(
     Json(payload): Json<RegisterPayload>,
 ) -> Result<StatusCode, StatusCode> {
     let target_uuid = payload.target_uuid;
-    tracing::debug!(%target_uuid, "Received registration request");
+    let origin = payload.origin.clone();
+    tracing::debug!(%target_uuid, %origin, "Received registration request");
 
     // Get embedding using the helper function
     let embedding_vec =
@@ -135,10 +138,11 @@ pub async fn register(
     tracing::info!(%target_uuid, "Embedding calculated (first 5 values): {:?}", &embedding_vec[..5.min(embedding_vec.len())]);
 
     // Store the embedding in the database
-    tracing::info!(%target_uuid, "Storing embedding in the database...");
-    match sqlx::query("INSERT INTO targets (uuid, embeddings) VALUES ($1, $2)")
+    tracing::info!(%target_uuid, %origin, "Storing embedding in the database...");
+    match sqlx::query("INSERT INTO targets (uuid, embeddings, origin) VALUES ($1, $2, $3)")
         .bind(target_uuid)
         .bind(&embedding_vec[..])
+        .bind(&origin)
         .execute(&state.db_pool)
         .await
     {
@@ -146,7 +150,7 @@ pub async fn register(
             tracing::info!(%target_uuid, "Successfully stored embedding in the database.");
 
             // Add the embedding to in-memory storage
-            tracing::info!(%target_uuid, "Adding embedding to in-memory store...");
+            tracing::info!(%target_uuid, %origin, "Adding embedding to in-memory store...");
             let mut embeddings_store = match state.embeddings_store.lock() {
                 Ok(store) => store,
                 Err(e) => {
@@ -154,7 +158,7 @@ pub async fn register(
                     return Err(StatusCode::INTERNAL_SERVER_ERROR);
                 }
             };
-            embeddings_store.add(target_uuid, embedding_vec.clone());
+            embeddings_store.add(target_uuid, embedding_vec.clone(), origin.clone());
             tracing::info!(%target_uuid, "Successfully added embedding to in-memory store");
             tracing::info!(%target_uuid, "Total embeddings in memory: {}", embeddings_store.len());
 
@@ -209,9 +213,10 @@ pub async fn search(
     // Format results
     let results: Vec<SearchResult> = similar_embeddings
         .into_iter()
-        .map(|(uuid, similarity)| SearchResult {
+        .map(|(uuid, origin, similarity)| SearchResult {
             target_uuid: uuid.to_string(),
             similarity,
+            origin,
         })
         .collect();
 

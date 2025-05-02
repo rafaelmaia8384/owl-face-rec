@@ -22,6 +22,7 @@ mod handlers;
 pub struct EmbeddingEntry {
     pub uuid: Uuid,
     pub embedding: Vec<f32>,
+    pub origin: String,
 }
 
 // Implementação de funções de similaridade para embeddings
@@ -56,23 +57,32 @@ impl EmbeddingsStore {
         }
     }
 
-    pub fn add(&mut self, uuid: Uuid, embedding: Vec<f32>) {
-        self.entries.push(EmbeddingEntry { uuid, embedding });
+    pub fn add(&mut self, uuid: Uuid, embedding: Vec<f32>, origin: String) {
+        self.entries.push(EmbeddingEntry {
+            uuid,
+            embedding,
+            origin,
+        });
     }
 
-    pub fn find_similar(&self, query: &[f32], threshold: f32, limit: usize) -> Vec<(Uuid, f32)> {
-        let mut results: Vec<(Uuid, f32)> = self
+    pub fn find_similar(
+        &self,
+        query: &[f32],
+        threshold: f32,
+        limit: usize,
+    ) -> Vec<(Uuid, String, f32)> {
+        let mut results: Vec<(Uuid, String, f32)> = self
             .entries
             .par_iter()
             .map(|entry| {
                 let similarity = cosine_similarity(query, &entry.embedding);
-                (entry.uuid, similarity)
+                (entry.uuid, entry.origin.clone(), similarity)
             })
-            .filter(|&(_, similarity)| similarity >= threshold)
+            .filter(|&(_, _, similarity)| similarity >= threshold)
             .collect();
 
         // Ordenar por similaridade (maior primeiro)
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
 
         // Limitar o número de resultados
         results.truncate(limit);
@@ -147,7 +157,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         r#"
         CREATE TABLE IF NOT EXISTS targets (
             uuid UUID NOT NULL,
-            embeddings REAL[] NOT NULL
+            embeddings REAL[] NOT NULL,
+            origin VARCHAR NOT NULL DEFAULT ''
         );
         "#,
     )
@@ -177,7 +188,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Carregar todos os embeddings existentes do banco de dados
     tracing::info!("Loading existing embeddings from database into memory...");
-    let all_embeddings = sqlx::query("SELECT uuid, embeddings FROM targets")
+    let all_embeddings = sqlx::query("SELECT uuid, embeddings, origin FROM targets")
         .fetch_all(&pool)
         .await?;
 
@@ -185,8 +196,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         for record in &all_embeddings {
             let uuid: Uuid = record.try_get("uuid")?;
             let embeddings: Vec<f32> = record.try_get("embeddings")?;
+            let origin: String = record.try_get("origin").unwrap_or_else(|_| "".to_string());
 
-            embeddings_store.add(uuid, embeddings);
+            embeddings_store.add(uuid, embeddings, origin);
         }
         tracing::info!("Loaded {} embeddings into memory", embeddings_store.len());
     } else {
