@@ -6,6 +6,7 @@ use ort::{inputs, session::Session, session::SessionOutputs, value::Value};
 use serde::{Deserialize, Serialize};
 use sqlx;
 use std::sync::Arc;
+use std::time::Instant;
 use uuid::Uuid;
 
 use crate::AppState; // Import AppState from main.rs
@@ -125,6 +126,7 @@ pub async fn register(
     State(state): State<AppState>, // Extract state
     Json(payload): Json<RegisterPayload>,
 ) -> Result<StatusCode, StatusCode> {
+    let start = Instant::now(); // Record start time
     let target_uuid = payload.target_uuid;
     let origin = payload.origin.clone();
     tracing::debug!(%target_uuid, %origin, "Received registration request");
@@ -162,6 +164,9 @@ pub async fn register(
             tracing::info!(%target_uuid, "Successfully added embedding to in-memory store");
             tracing::info!(%target_uuid, "Total embeddings in memory: {}", embeddings_store.len());
 
+            let duration = start.elapsed(); // Calculate duration
+            tracing::info!(%target_uuid, duration = ?duration, "Registration successful"); // Log duration
+
             Ok(StatusCode::CREATED)
         }
         Err(e) => {
@@ -176,6 +181,7 @@ pub async fn search(
     State(state): State<AppState>,
     Json(payload): Json<SearchPayload>,
 ) -> Result<Json<SearchResponse>, StatusCode> {
+    let start = Instant::now(); // Record start time
     tracing::debug!("Received search request");
 
     // Get query embedding using the helper function
@@ -219,6 +225,9 @@ pub async fn search(
             origin,
         })
         .collect();
+
+    let duration = start.elapsed(); // Calculate duration
+    tracing::info!(duration = ?duration, results_count = results.len(), "Search successful"); // Log duration
 
     Ok(Json(SearchResponse { results }))
 }
