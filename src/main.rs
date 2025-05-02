@@ -21,8 +21,8 @@ mod handlers;
 #[derive(Clone)]
 pub struct EmbeddingEntry {
     pub uuid: Uuid,
-    pub embedding: Vec<f32>,
     pub origin: String,
+    pub embedding: Vec<f32>,
 }
 
 // Implementação de funções de similaridade para embeddings
@@ -57,7 +57,7 @@ impl EmbeddingsStore {
         }
     }
 
-    pub fn add(&mut self, uuid: Uuid, embedding: Vec<f32>, origin: String) {
+    pub fn add(&mut self, uuid: Uuid, origin: String, embedding: Vec<f32>) {
         self.entries.push(EmbeddingEntry {
             uuid,
             embedding,
@@ -157,8 +157,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         r#"
         CREATE TABLE IF NOT EXISTS targets (
             uuid UUID NOT NULL,
-            embeddings REAL[] NOT NULL,
-            origin VARCHAR NOT NULL DEFAULT ''
+            origin VARCHAR(64) NOT NULL DEFAULT 'unknown',
+            embeddings REAL[] NOT NULL
         );
         "#,
     )
@@ -195,10 +195,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !all_embeddings.is_empty() {
         for record in &all_embeddings {
             let uuid: Uuid = record.try_get("uuid")?;
-            let embeddings: Vec<f32> = record.try_get("embeddings")?;
             let origin: String = record.try_get("origin").unwrap_or_else(|_| "".to_string());
+            let embeddings: Vec<f32> = record.try_get("embeddings")?;
 
-            embeddings_store.add(uuid, embeddings, origin);
+            embeddings_store.add(uuid, origin, embeddings);
         }
         tracing::info!("Loaded {} embeddings into memory", embeddings_store.len());
     } else {

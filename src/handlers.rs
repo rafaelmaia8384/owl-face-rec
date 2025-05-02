@@ -158,7 +158,7 @@ pub async fn register(
                     return Err(StatusCode::INTERNAL_SERVER_ERROR);
                 }
             };
-            embeddings_store.add(target_uuid, embedding_vec.clone(), origin.clone());
+            embeddings_store.add(target_uuid, origin.clone(), embedding_vec.clone());
             tracing::info!(%target_uuid, "Successfully added embedding to in-memory store");
             tracing::info!(%target_uuid, "Total embeddings in memory: {}", embeddings_store.len());
 
