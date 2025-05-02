@@ -27,6 +27,10 @@ pub struct EmbeddingEntry {
 
 // Implementação de funções de similaridade para embeddings
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() {
+        panic!("Vectors with different sizes!");
+    }
+
     let mut dot_product = 0.0;
     let mut norm_a = 0.0;
     let mut norm_b = 0.0;
