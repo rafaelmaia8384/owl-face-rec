@@ -15,5 +15,5 @@ RUN apt-get update && apt-get install -y \
     openssl \
     libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/target/release/owl-face-rec /app/
-CMD ["./owl-face-rec"]
+COPY --from=builder /app/target/release/owlfacerec /app/
+CMD ["./owlfacerec"]
