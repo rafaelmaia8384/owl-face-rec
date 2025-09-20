@@ -1,0 +1,57 @@
+stages:
+  - build_and_push
+
+variables:
+  # O REGISTRY já contém o nome da imagem base.
+  # Ex: registry.gitlab.com/meu-grupo/meu-projeto
+  REGISTRY: "${CI_REGISTRY_IMAGE}"
+  # Usamos apenas o nome da branch/tag como tag da imagem
+  IMAGE_TAG: "${CI_COMMIT_REF_SLUG}"
+  IMAGE_TAG_LATEST: "latest"
+
+# Cache para acelerar builds futuros (parece ser um projeto Rust)
+cache:
+  key:
+    files:
+      - Cargo.lock
+  paths:
+    - target/
+    - .cargo/
+
+build_and_push:
+  stage: build_and_push
+  image: docker:24.0.5
+  services:
+    - name: docker:24.0.5-dind
+      alias: docker
+  before_script:
+    # Login no registro de contêiner do GitLab
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    # 1. Constrói a imagem uma única vez com a tag da branch/tag
+    - echo "Building Docker image $REGISTRY:$IMAGE_TAG"
+    - docker build --pull -t "$REGISTRY:$IMAGE_TAG" .
+
+    # 2. Publica a imagem com a tag da branch/tag
+    - echo "Pushing image $REGISTRY:$IMAGE_TAG"
+    - docker push "$REGISTRY:$IMAGE_TAG"
+
+    # 3. Se for a branch 'main' ou 'master', aplica e publica a tag 'latest'
+    - |
+      if [ "$CI_COMMIT_REF_NAME" = "main" ] || [ "$CI_COMMIT_REF_NAME" = "master" ]; then
+        echo "This is the main branch. Tagging and pushing as 'latest'."
+        docker tag "$REGISTRY:$IMAGE_TAG" "$REGISTRY:$IMAGE_TAG_LATEST"
+        docker push "$REGISTRY:$IMAGE_TAG_LATEST"
+        echo "Pushed latest image: $REGISTRY:$IMAGE_TAG_LATEST"
+      fi
+  rules:
+    # Executa o job se houver um commit em qualquer branch
+    - if: $CI_COMMIT_BRANCH
+      changes: # Otimização: roda apenas se arquivos relevantes mudarem
+        - "**/*"
+        - "Dockerfile"
+        - "Cargo.toml"
+        - "Cargo.lock"
+    # Executa também para merge requests e tags
+    - if: $CI_MERGE_REQUEST_ID
+    - if: $CI_COMMIT_TAG
