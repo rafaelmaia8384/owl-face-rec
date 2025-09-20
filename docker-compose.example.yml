@@ -1,0 +1,54 @@
+# Exemplo de como usar a imagem do owlfacerec em outros projetos
+# Substitua REGISTRY_URL pelo URL do seu registry GitLab
+# Exemplo: registry.gitlab.com/seu-usuario/owl-face-rec
+
+version: '3.8'
+
+services:
+  # Serviço principal do owlfacerec
+  owlfacerec:
+    image: ${REGISTRY_URL}/owlfacerec:latest  # ou use uma tag específica
+    container_name: owlfacerec
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3000"
+      RUST_LOG: ${RUST_LOG:-info}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_HOST: postgres  # Nome do serviço do banco
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-owlfacerec}
+    depends_on:
+      - postgres
+    volumes:
+      # Monte o diretório models se necessário
+      - ./models:/app/models:ro
+
+  # Banco de dados PostgreSQL (opcional, se não tiver um externo)
+  postgres:
+    image: postgres:15-alpine
+    container_name: owlfacerec-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-owlfacerec}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+volumes:
+  postgres_data:
+
+# Variáveis de ambiente necessárias (crie um arquivo .env):
+# REGISTRY_URL=registry.gitlab.com/seu-usuario/owl-face-rec
+# APP_PORT=3000
+# RUST_LOG=info
+# POSTGRES_USER=postgres
+# POSTGRES_PASSWORD=postgres
+# POSTGRES_PORT=5432
+# POSTGRES_DB=owlfacerec
