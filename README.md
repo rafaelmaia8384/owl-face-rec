@@ -108,7 +108,7 @@ POSTGRES_DB=owlfacerec
 
 2. **View logs**:
    ```bash
-   docker-compose logs -f app
+   docker-compose logs -f owlfacerec
    ```
 
 3. **Stop the services**:
