@@ -27,7 +27,9 @@ build_multi_arch_manual_main:
 
     # Cria e ativa um builder do Buildx
     - echo "Setting up Docker Buildx..."
-    - docker buildx create --use --name multi-arch-builder
+    #- docker buildx create --use --name multi-arch-builder
+    - docker context create dind-context
+    - docker buildx create --use --name multi-arch-builder dind-context
     - docker buildx inspect --bootstrap
 
   script:
