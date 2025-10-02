@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y \
     libstdc++-12-dev \
     && rm -rf /var/lib/apt/lists/*
 COPY . .
-RUN cargo build --release
+RUN CARGO_BUILD_JOBS=1 cargo build --release
 
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
