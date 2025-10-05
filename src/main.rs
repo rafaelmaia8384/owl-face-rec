@@ -85,12 +85,8 @@ impl EmbeddingsStore {
             .filter(|&(_, _, similarity)| similarity >= threshold)
             .collect();
 
-        // Ordenar por similaridade (maior primeiro)
         results.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
-
-        // Limitar o número de resultados
         results.truncate(limit);
-
         results
     }
 
@@ -254,6 +250,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create the application state
     let app_state = AppState {
         onnx_session: Arc::new(onnx_session),
+
         db_pool: pool.clone(),
         embeddings_store: Arc::new(Mutex::new(embeddings_store)),
     };
