@@ -1,1 +1,1 @@
-Download model arcfaceresnet100-8.onnx to this folder
+Download model arcfaceresnet100-8.onnx and seeta_fd_frontal_v1.0.bin to this folder

@@ -17,7 +17,6 @@ use uuid::Uuid;
 
 mod handlers;
 
-// Estructura para associar uuid com embeddings
 #[derive(Clone)]
 pub struct EmbeddingEntry {
     pub uuid: Uuid,
@@ -25,7 +24,6 @@ pub struct EmbeddingEntry {
     pub embedding: Vec<f32>,
 }
 
-// Implementação de funções de similaridade para embeddings
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() {
         panic!("Vectors with different sizes!");
@@ -48,11 +46,29 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     dot_product / (norm_a.sqrt() * norm_b.sqrt())
 }
 
-// Armazenamento e função de busca para embeddings
 #[derive(Clone)]
 pub struct EmbeddingsStore {
     entries: Vec<EmbeddingEntry>,
 }
+
+pub struct SafeDetector {
+    inner: Mutex<Box<dyn rustface::Detector>>,
+}
+
+impl SafeDetector {
+    pub fn new(detector: Box<dyn rustface::Detector>) -> Self {
+        Self {
+            inner: Mutex::new(detector),
+        }
+    }
+
+    pub fn lock(&self) -> std::sync::MutexGuard<'_, Box<dyn rustface::Detector>> {
+        self.inner.lock().unwrap()
+    }
+}
+
+unsafe impl Send for SafeDetector {}
+unsafe impl Sync for SafeDetector {}
 
 impl EmbeddingsStore {
     pub fn new() -> Self {
@@ -85,12 +101,8 @@ impl EmbeddingsStore {
             .filter(|&(_, _, similarity)| similarity >= threshold)
             .collect();
 
-        // Ordenar por similaridade (maior primeiro)
         results.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
-
-        // Limitar o número de resultados
         results.truncate(limit);
-
         results
     }
 
@@ -106,9 +118,10 @@ impl EmbeddingsStore {
 // Shared application state
 #[derive(Clone)]
 pub struct AppState {
-    onnx_session: Arc<Session>,
-    db_pool: PgPool,
-    embeddings_store: Arc<Mutex<EmbeddingsStore>>,
+    pub onnx_session: Arc<Session>,
+    pub db_pool: PgPool,
+    pub embeddings_store: Arc<Mutex<EmbeddingsStore>>,
+    pub facedetect_detector: Arc<SafeDetector>,
 }
 
 #[tokio::main]
@@ -205,6 +218,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             uuid UUID NOT NULL,
             origin VARCHAR(64) NOT NULL DEFAULT 'unknown',
             embeddings REAL[] NOT NULL
+            data JSONB
         );
         "#,
     )
@@ -227,6 +241,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .commit_from_file(model_path.clone())?;
 
     tracing::info!(model_path = ?model_path, "ONNX model loaded successfully.");
+
+    // Carregue o detector de rostos aqui, similar ao carregamento do modelo ONNX
+    tracing::info!("Loading face detection model...");
+    let facedetect_model_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("models")
+        .join("seeta_fd_frontal_v1.0.bin");
+    tracing::info!(model_path = ?facedetect_model_path, "ONNX face detection model loaded successfully.");
+
+    // Crie o detector
+    let mut detector = rustface::create_detector(facedetect_model_path.to_str().unwrap())
+        .expect("Erro ao carregar modelo de detecção de rostos");
+
+    detector.set_min_face_size(20);
+    detector.set_score_thresh(2.0);
+    detector.set_pyramid_scale_factor(0.8);
+    detector.set_slide_window_step(4, 4);
+
+    let safe_detector = SafeDetector::new(detector);
+
+    tracing::info!("Face detection model loaded and configured successfully.");
 
     // Inicializar o armazenamento de embeddings
     tracing::info!("Initializing embeddings store...");
@@ -256,6 +290,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         onnx_session: Arc::new(onnx_session),
         db_pool: pool.clone(),
         embeddings_store: Arc::new(Mutex::new(embeddings_store)),
+        facedetect_detector: Arc::new(safe_detector),
     };
 
     // build our application with multiple routes and state
