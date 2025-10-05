@@ -168,13 +168,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
     {
         Ok(_) => {
-            tracing::info!(target_db = %postgres_db, "Database created successfully or already existed.")
+            tracing::info!(target_db = %postgres_db, "Database created successfully or already existed")
         }
         Err(e) => {
             if let Some(db_err) = e.as_database_error() {
                 // Check for PostgreSQL error code '42P04' (database already exists)
                 if db_err.code().map_or(false, |code| code == "42P04") {
-                    tracing::info!(target_db = %postgres_db, "Database already exists.");
+                    tracing::info!(target_db = %postgres_db, "Database already exists");
                 } else {
                     tracing::error!(error = %e, target_db = %postgres_db, "Failed to create database");
                     return Err(e.into()); // Return the original error
@@ -205,10 +205,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 5. Ping the database to verify connection
     pool.acquire().await?.ping().await?;
-    tracing::info!(
-        "Connection to target database '{}' successful.",
-        postgres_db
-    );
+    tracing::info!("Connection to target database '{}' successful", postgres_db);
 
     // 6. Create 'targets' table if it doesn't exist
     tracing::info!("Ensuring 'targets' table exists...");
@@ -217,18 +214,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         CREATE TABLE IF NOT EXISTS targets (
             uuid UUID NOT NULL,
             origin VARCHAR(64) NOT NULL DEFAULT 'unknown',
-            embeddings REAL[] NOT NULL
+            embeddings REAL[] NOT NULL,
             data JSONB
         );
         "#,
     )
     .execute(&pool)
     .await?;
-    tracing::info!("'targets' table is ready.");
+    tracing::info!("'targets' table is ready");
 
     // Initialize ONNX Runtime environment globally
     init().with_name("ArcFaceApp").commit()?;
-    tracing::info!("ONNX Runtime environment initialized.");
+    tracing::info!("ONNX Runtime environment initialized");
 
     tracing::info!("Loading ArcFace ONNX model...");
     // Build session with absolute path to ONNX model
@@ -240,27 +237,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_optimization_level(GraphOptimizationLevel::Level3)?
         .commit_from_file(model_path.clone())?;
 
-    tracing::info!(model_path = ?model_path, "ONNX model loaded successfully.");
+    tracing::info!(model_path = ?model_path, "ONNX model loaded successfully");
 
     // Carregue o detector de rostos aqui, similar ao carregamento do modelo ONNX
     tracing::info!("Loading face detection model...");
     let facedetect_model_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("models")
         .join("seeta_fd_frontal_v1.0.bin");
-    tracing::info!(model_path = ?facedetect_model_path, "ONNX face detection model loaded successfully.");
+    tracing::info!(model_path = ?facedetect_model_path, "ONNX face detection model loaded successfully");
 
-    // Crie o detector
     let mut detector = rustface::create_detector(facedetect_model_path.to_str().unwrap())
-        .expect("Erro ao carregar modelo de detecção de rostos");
+        .expect("Face detector model load failed");
 
-    detector.set_min_face_size(20);
-    detector.set_score_thresh(2.0);
-    detector.set_pyramid_scale_factor(0.8);
-    detector.set_slide_window_step(4, 4);
+    detector.set_min_face_size(50);
+    detector.set_score_thresh(2.5);
+    detector.set_pyramid_scale_factor(0.9);
+    detector.set_slide_window_step(8, 8);
 
     let safe_detector = SafeDetector::new(detector);
 
-    tracing::info!("Face detection model loaded and configured successfully.");
+    tracing::info!("Face detection model loaded and configured successfully");
 
     // Inicializar o armazenamento de embeddings
     tracing::info!("Initializing embeddings store...");
