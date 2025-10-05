@@ -216,7 +216,7 @@ pub async fn register(
 
     // Get embedding using separated functions
     let img = decode_base64_to_image(&payload.image_base64)?;
-    let cropped_img = crop_face(state.facedetect_detector.clone(), img).await?;
+    let cropped_img = crop_face(state.facedetect_detector, img).await?;
     let embedding_vec = get_embedding_from_image(cropped_img, &state.onnx_session).await?;
     tracing::info!(%target_uuid, "Embedding calculated (first 5 values): {:?}", &embedding_vec[..5.min(embedding_vec.len())]);
 
@@ -273,7 +273,7 @@ pub async fn search(
 
     // Get query embedding using separated functions
     let img = decode_base64_to_image(&payload.image_base64)?;
-    let cropped_img = crop_face(state.facedetect_detector.clone(), img).await?;
+    let cropped_img = crop_face(state.facedetect_detector, img).await?;
     let embedding_vec = get_embedding_from_image(cropped_img, &state.onnx_session).await?;
     tracing::info!(
         "Query embedding calculated (first 5 values): {:?}",
