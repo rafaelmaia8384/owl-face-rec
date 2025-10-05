@@ -80,19 +80,20 @@ pub async fn crop_face(
         let width = gray.width();
         let height = gray.height();
         let image_data = rustface::ImageData::new(gray.as_raw(), width, height);
+
         let faces = detector.detect(&image_data);
 
         if faces.is_empty() {
-            tracing::error!("No face detected in the image.");
-            return Err(StatusCode::BAD_REQUEST);
+            tracing::error!("No face detected in the image");
+            return Err(StatusCode::UNPROCESSABLE_ENTITY);
         }
 
         if faces.len() > 1 {
             tracing::error!(
                 count = faces.len(),
-                "More than one face detected in the image."
+                "More than one face detected in the image"
             );
-            return Err(StatusCode::BAD_REQUEST);
+            return Err(StatusCode::UNPROCESSABLE_ENTITY);
         }
 
         let face = &faces[0];
@@ -112,7 +113,7 @@ pub async fn crop_face(
     })
     .await
     .map_err(|e| {
-        tracing::error!(error = %e, "Error executing face detection task.");
+        tracing::error!(error = %e, "Error executing face detection task");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
@@ -161,7 +162,6 @@ async fn get_embedding_from_image(
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
         let embedding_value: &Value = &outputs[0];
-
         let embedding_tensor = embedding_value.try_extract_tensor::<f32>().map_err(|e| {
             tracing::error!(error = %e, "Failed to extract tensor from ONNX output");
             StatusCode::INTERNAL_SERVER_ERROR
@@ -221,7 +221,7 @@ pub async fn register(
     tracing::info!(%target_uuid, "Embedding calculated (first 5 values): {:?}", &embedding_vec[..5.min(embedding_vec.len())]);
 
     // Store the embedding in the database
-    tracing::info!(%target_uuid, %origin, "Storing embedding in the database...");
+    tracing::info!(%target_uuid, %origin, "Storing embedding in the database..");
     match sqlx::query("INSERT INTO targets (uuid, embeddings, origin) VALUES ($1, $2, $3)")
         .bind(target_uuid)
         .bind(&embedding_vec[..])
@@ -230,10 +230,10 @@ pub async fn register(
         .await
     {
         Ok(_) => {
-            tracing::info!(%target_uuid, "Successfully stored embedding in the database.");
+            tracing::info!(%target_uuid, "Successfully stored embedding in the database");
 
             // Add the embedding to in-memory storage
-            tracing::info!(%target_uuid, %origin, "Adding embedding to in-memory store...");
+            tracing::info!(%target_uuid, %origin, "Adding embedding to in-memory store..");
             let mut embeddings_store = match state.embeddings_store.lock() {
                 Ok(store) => store,
                 Err(e) => {
