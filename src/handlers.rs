@@ -50,7 +50,8 @@ pub struct SearchResult {
 
 // Function to decode base64 and return the image (synchronous for performance)
 fn decode_base64_to_image(image_base64: &str) -> Result<DynamicImage, StatusCode> {
-    // Decode Base64
+    let start = Instant::now(); // Record start time
+                                // Decode Base64
     let image_bytes = general_purpose::STANDARD
         .decode(image_base64)
         .map_err(|e| {
@@ -65,7 +66,8 @@ fn decode_base64_to_image(image_base64: &str) -> Result<DynamicImage, StatusCode
         StatusCode::BAD_REQUEST
     })?;
     tracing::debug!(dims = ?img.dimensions(), "Image loaded");
-
+    let duration = start.elapsed(); // Calculate duration
+    tracing::info!(duration = ?duration, "decode_base64_to_image"); // Log duration
     Ok(img)
 }
 
@@ -74,13 +76,13 @@ pub async fn crop_face(
     detector_arc: Arc<SafeDetector>,
     img: DynamicImage,
 ) -> Result<DynamicImage, StatusCode> {
+    let start = Instant::now(); // Record start time
     let res = task::spawn_blocking(move || {
         let mut detector = detector_arc.lock();
         let gray = img.to_luma8();
-        let width = gray.width();
-        let height = gray.height();
-        let image_data = rustface::ImageData::new(gray.as_raw(), width, height);
+        let (width, height) = (gray.width(), gray.height());
 
+        let image_data = rustface::ImageData::new(gray.as_raw(), width, height);
         let faces = detector.detect(&image_data);
 
         if faces.is_empty() {
@@ -116,7 +118,8 @@ pub async fn crop_face(
         tracing::error!(error = %e, "Error executing face detection task");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-
+    let duration = start.elapsed(); // Calculate duration
+    tracing::info!(duration = ?duration, "crop_face"); // Log duration
     res
 }
 
@@ -125,7 +128,8 @@ async fn get_embedding_from_image(
     img: DynamicImage,
     onnx_session: &Arc<Session>,
 ) -> Result<Vec<f32>, StatusCode> {
-    // Clone the Arc to make it owned and 'static
+    let start = Instant::now(); // Record start time
+                                // Clone the Arc to make it owned and 'static
     let onnx_session = onnx_session.clone();
 
     // Wrap CPU-bound ONNX inference in spawn_blocking for better async performance
@@ -175,9 +179,9 @@ async fn get_embedding_from_image(
         tracing::error!(error = %e, "Failed to spawn blocking task for inference");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-
-    let embedding_vec = res?;
-    Ok(embedding_vec)
+    let duration = start.elapsed(); // Calculate duration
+    tracing::info!(duration = ?duration, "get_embedding_from_image"); // Log duration
+    Ok(res?)
 }
 
 // --- Handlers ---
@@ -218,7 +222,6 @@ pub async fn register(
     let img = decode_base64_to_image(&payload.image_base64)?;
     let cropped_img = crop_face(state.facedetect_detector, img).await?;
     let embedding_vec = get_embedding_from_image(cropped_img, &state.onnx_session).await?;
-    tracing::info!(%target_uuid, "Embedding calculated (first 5 values): {:?}", &embedding_vec[..5.min(embedding_vec.len())]);
 
     // Store the embedding in the database
     tracing::info!(%target_uuid, %origin, "Storing embedding in the database..");
