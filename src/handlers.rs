@@ -108,11 +108,6 @@ pub async fn crop_face(
 
         let cropped = img.crop_imm(x, y, w, h);
 
-        //Salvar imagem de teste
-        cropped
-            .save("imagem.png")
-            .expect("Erro ao salvar o rosto cortado");
-
         Ok(cropped)
     })
     .await
