@@ -3,21 +3,21 @@ use base64::{engine::general_purpose, Engine as _};
 use image::{DynamicImage, GenericImageView, ImageBuffer, Rgb};
 use ndarray::{Array, Ix4};
 use ort::{inputs, session::Session, session::SessionOutputs, value::Value};
+use rustface::Detector;
 use serde::{Deserialize, Serialize};
 use sqlx;
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::task;
 use uuid::Uuid;
 
 use crate::AppState; // Import AppState from main.rs
 
-// --- Helper function for Image Processing and Embedding Extraction ---
+// --- Separated Functions ---
 
-async fn get_embedding_from_base64(
-    image_base64: &str,
-    onnx_session: &Arc<Session>,
-) -> Result<Vec<f32>, StatusCode> {
-    // 1. Decode Base64
+// Function to decode base64 and return the image (synchronous for performance)
+fn decode_base64_to_image(image_base64: &str) -> Result<DynamicImage, StatusCode> {
+    // Decode Base64
     let image_bytes = general_purpose::STANDARD
         .decode(image_base64)
         .map_err(|e| {
@@ -26,54 +26,131 @@ async fn get_embedding_from_base64(
         })?;
     tracing::debug!(image_size = image_bytes.len(), "Base64 decoded");
 
-    // 2. Load Image from bytes
+    // Load Image from bytes
     let img: DynamicImage = image::load_from_memory(&image_bytes).map_err(|e| {
         tracing::error!(error = %e, "Failed to load image from bytes");
         StatusCode::BAD_REQUEST
     })?;
     tracing::debug!(dims = ?img.dimensions(), "Image loaded");
 
-    // 3. Preprocess Image
-    let input_array: Array<f32, Ix4> = preprocess_image(img, 112, 112).map_err(|e| {
-        tracing::error!(error = %e, "Failed to preprocess image");
+    Ok(img)
+}
+
+// fn crop_face(img: DynamicImage) -> DynamicImage {
+//     img
+// }
+
+pub async fn crop_face(
+    mut detector: Box<dyn Detector + Send>,
+    img: DynamicImage,
+) -> Result<DynamicImage, StatusCode> {
+    let res = task::spawn_blocking(move || {
+        let gray = img.to_luma8();
+        let width = gray.width();
+        let height = gray.height();
+
+        let image_data = rustface::ImageData::new(gray.as_raw(), width, height);
+        image_data.copy_from_slice(&gray);
+
+        let faces = detector.detect(&image_data);
+
+        if faces.is_empty() {
+            tracing::error!("Nenhum rosto detectado na imagem");
+            return Err(StatusCode::BAD_REQUEST);
+        }
+
+        if faces.len() > 1 {
+            tracing::error!(count = faces.len(), "Mais de um rosto detectado na imagem");
+            return Err(StatusCode::BAD_REQUEST);
+        }
+
+        let face = &faces[0];
+        let bbox = face.bbox();
+
+        let (x, y, w, h) = (
+            bbox.x().max(0) as u32,
+            bbox.y().max(0) as u32,
+            bbox.width() as u32,
+            bbox.height() as u32,
+        );
+
+        let x2 = (x + w).min(img.width());
+        let y2 = (y + h).min(img.height());
+        let crop_w = x2 - x;
+        let crop_h = y2 - y;
+
+        tracing::debug!(x, y, crop_w, crop_h, "Recortando rosto detectado");
+
+        let cropped = img.crop_imm(x, y, crop_w, crop_h);
+        Ok(cropped)
+    })
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "Erro ao executar tarefa de detecção facial");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    tracing::debug!(shape = ?input_array.shape(), "Image preprocessed");
 
-    // 4. Prepare ONNX Input Value
-    let shape: Vec<usize> = input_array.shape().to_vec();
-    let raw_vec = input_array.into_raw_vec();
-    let input_value = Value::from_array((shape, raw_vec)).map_err(|e| {
-        tracing::error!(error = %e, "Failed to create input value from array");
+    res
+}
+
+// Function to obtain embeddings from the image (async for blocking ONNX inference)
+async fn get_embedding_from_image(
+    img: DynamicImage,
+    onnx_session: &Arc<Session>,
+) -> Result<Vec<f32>, StatusCode> {
+    // Clone the Arc to make it owned and 'static
+    let onnx_session = onnx_session.clone();
+
+    // Wrap CPU-bound ONNX inference in spawn_blocking for better async performance
+    let res = task::spawn_blocking(move || {
+        // Preprocess Image
+        let input_array: Array<f32, Ix4> = preprocess_image(img, 112, 112).map_err(|e| {
+            tracing::error!(error = %e, "Failed to preprocess image");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+        tracing::debug!(shape = ?input_array.shape(), "Image preprocessed");
+
+        // Prepare ONNX Input Value
+        let shape: Vec<usize> = input_array.shape().to_vec();
+        let raw_vec = input_array.into_raw_vec();
+        let input_value = Value::from_array((shape, raw_vec)).map_err(|e| {
+            tracing::error!(error = %e, "Failed to create input value from array");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        // Prepare session inputs and run ONNX Inference
+        let session_inputs = inputs![input_value].map_err(|e| {
+            tracing::error!(error = %e, "Failed to create session inputs");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        let outputs: SessionOutputs = onnx_session.run(session_inputs).map_err(|e| {
+            tracing::error!(error = %e, "ONNX inference failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        // Process Output (Get Embedding)
+        if outputs.len() == 0 {
+            tracing::error!("ONNX output is empty");
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+        let embedding_value: &Value = &outputs[0];
+
+        let embedding_tensor = embedding_value.try_extract_tensor::<f32>().map_err(|e| {
+            tracing::error!(error = %e, "Failed to extract tensor from ONNX output");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        let embedding_vec: Vec<f32> = embedding_tensor.view().iter().cloned().collect();
+        Ok(embedding_vec)
+    })
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "Failed to spawn blocking task for inference");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // 5. Prepare session inputs and run ONNX Inference
-    let session_inputs = inputs![input_value].map_err(|e| {
-        tracing::error!(error = %e, "Failed to create session inputs");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    // NOTE: Consider if session.run() needs to be blocking or if it's already async-friendly.
-    // If it's blocking, might need tokio::task::spawn_blocking for CPU-bound work.
-    let outputs: SessionOutputs = onnx_session.run(session_inputs).map_err(|e| {
-        tracing::error!(error = %e, "ONNX inference failed");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    // 6. Process Output (Get Embedding)
-    if outputs.len() == 0 {
-        tracing::error!("ONNX output is empty");
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
-    }
-    let embedding_value: &Value = &outputs[0];
-
-    let embedding_tensor = embedding_value.try_extract_tensor::<f32>().map_err(|e| {
-        tracing::error!(error = %e, "Failed to extract tensor from ONNX output");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let embedding_vec: Vec<f32> = embedding_tensor.view().iter().cloned().collect();
+    let embedding_vec = res?;
     Ok(embedding_vec)
 }
 
@@ -148,12 +225,12 @@ pub async fn register(
     let origin = payload.origin.clone();
     tracing::debug!(%target_uuid, %origin, "Received registration request");
 
-    // Get embedding using the helper function
-    let embedding_vec =
-        match get_embedding_from_base64(&payload.image_base64, &state.onnx_session).await {
-            Ok(vec) => vec,
-            Err(status) => return Err(status),
-        };
+    // Get embedding using separated functions
+    let img = decode_base64_to_image(&payload.image_base64)?;
+    let mut detector = state.facedetect_detector.lock();
+    let cropped_img = crop_face(Box::new(detector.clone()), img).await?;
+
+    let embedding_vec = get_embedding_from_image(cropped_img, &state.onnx_session).await?;
     tracing::info!(%target_uuid, "Embedding calculated (first 5 values): {:?}", &embedding_vec[..5.min(embedding_vec.len())]);
 
     // Store the embedding in the database
@@ -209,12 +286,10 @@ pub async fn search(
 
     tracing::debug!("Received search request");
 
-    // Get query embedding using the helper function
-    let embedding_vec =
-        match get_embedding_from_base64(&payload.image_base64, &state.onnx_session).await {
-            Ok(vec) => vec,
-            Err(status) => return Err(status),
-        };
+    // Get query embedding using separated functions
+    let img = decode_base64_to_image(&payload.image_base64)?;
+    let cropped_img = crop_face(img);
+    let embedding_vec = get_embedding_from_image(cropped_img, &state.onnx_session).await?;
     tracing::info!(
         "Query embedding calculated (first 5 values): {:?}",
         &embedding_vec[..5.min(embedding_vec.len())]
@@ -263,7 +338,7 @@ fn preprocess_image(
     img: DynamicImage,
     target_width: u32,
     target_height: u32,
-) -> Result<Array<f32, Ix4>, Box<dyn std::error::Error>> {
+) -> Result<Array<f32, Ix4>, StatusCode> {
     let resized_img = img.resize_exact(
         target_width,
         target_height,
