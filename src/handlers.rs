@@ -3,7 +3,6 @@ use base64::{engine::general_purpose, Engine as _};
 use image::{DynamicImage, GenericImageView, ImageBuffer, Rgb};
 use ndarray::{Array, Ix4};
 use ort::{inputs, session::Session, session::SessionOutputs, value::Value};
-use rustface::Detector;
 use serde::{Deserialize, Serialize};
 use sqlx;
 use std::sync::Arc;
@@ -11,9 +10,43 @@ use std::time::Instant;
 use tokio::task;
 use uuid::Uuid;
 
-use crate::AppState; // Import AppState from main.rs
+use crate::AppState;
+use crate::SafeDetector;
 
-// --- Separated Functions ---
+// Define a response payload struct
+#[derive(Serialize)]
+pub struct ResponsePayload {
+    reply: String,
+}
+
+// Define the request payload for /register/
+#[derive(Deserialize)]
+pub struct RegisterPayload {
+    target_uuid: Uuid,
+    image_base64: String,
+    origin: String,
+}
+
+// Define the request payload for /search/
+#[derive(Deserialize)]
+pub struct SearchPayload {
+    image_base64: String,
+    threshold: Option<f32>,
+    limit: Option<usize>,
+}
+
+// Define the response for /search/
+#[derive(Serialize)]
+pub struct SearchResponse {
+    results: Vec<SearchResult>,
+}
+
+#[derive(Serialize)]
+pub struct SearchResult {
+    target_uuid: String,
+    similarity: f32,
+    origin: String,
+}
 
 // Function to decode base64 and return the image (synchronous for performance)
 fn decode_base64_to_image(image_base64: &str) -> Result<DynamicImage, StatusCode> {
@@ -36,31 +69,29 @@ fn decode_base64_to_image(image_base64: &str) -> Result<DynamicImage, StatusCode
     Ok(img)
 }
 
-// fn crop_face(img: DynamicImage) -> DynamicImage {
-//     img
-// }
-
+// Function to get cropped face image
 pub async fn crop_face(
-    mut detector: Box<dyn Detector + Send>,
+    detector_arc: Arc<SafeDetector>,
     img: DynamicImage,
 ) -> Result<DynamicImage, StatusCode> {
     let res = task::spawn_blocking(move || {
+        let mut detector = detector_arc.lock();
         let gray = img.to_luma8();
         let width = gray.width();
         let height = gray.height();
-
         let image_data = rustface::ImageData::new(gray.as_raw(), width, height);
-        image_data.copy_from_slice(&gray);
-
         let faces = detector.detect(&image_data);
 
         if faces.is_empty() {
-            tracing::error!("Nenhum rosto detectado na imagem");
+            tracing::error!("No face detected in the image.");
             return Err(StatusCode::BAD_REQUEST);
         }
 
         if faces.len() > 1 {
-            tracing::error!(count = faces.len(), "Mais de um rosto detectado na imagem");
+            tracing::error!(
+                count = faces.len(),
+                "More than one face detected in the image."
+            );
             return Err(StatusCode::BAD_REQUEST);
         }
 
@@ -79,14 +110,12 @@ pub async fn crop_face(
         let crop_w = x2 - x;
         let crop_h = y2 - y;
 
-        tracing::debug!(x, y, crop_w, crop_h, "Recortando rosto detectado");
-
         let cropped = img.crop_imm(x, y, crop_w, crop_h);
         Ok(cropped)
     })
     .await
     .map_err(|e| {
-        tracing::error!(error = %e, "Erro ao executar tarefa de detecção facial");
+        tracing::error!(error = %e, "Error executing face detection task.");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
@@ -154,43 +183,6 @@ async fn get_embedding_from_image(
     Ok(embedding_vec)
 }
 
-// --- Struct Definitions ---
-
-// Define a response payload struct
-#[derive(Serialize)]
-pub struct ResponsePayload {
-    reply: String,
-}
-
-// Define the request payload for /register/
-#[derive(Deserialize)]
-pub struct RegisterPayload {
-    target_uuid: Uuid,
-    image_base64: String,
-    origin: String,
-}
-
-// Define the request payload for /search/
-#[derive(Deserialize)]
-pub struct SearchPayload {
-    image_base64: String,
-    threshold: Option<f32>,
-    limit: Option<usize>,
-}
-
-// Define the response for /search/
-#[derive(Serialize)]
-pub struct SearchResponse {
-    results: Vec<SearchResult>,
-}
-
-#[derive(Serialize)]
-pub struct SearchResult {
-    target_uuid: String,
-    similarity: f32,
-    origin: String,
-}
-
 // --- Handlers ---
 
 // Handler for GET / route, returns 200 OK
@@ -227,8 +219,7 @@ pub async fn register(
 
     // Get embedding using separated functions
     let img = decode_base64_to_image(&payload.image_base64)?;
-    let mut detector = state.facedetect_detector.lock();
-    let cropped_img = crop_face(Box::new(detector.clone()), img).await?;
+    let cropped_img = crop_face(state.facedetect_detector.clone(), img).await?;
 
     let embedding_vec = get_embedding_from_image(cropped_img, &state.onnx_session).await?;
     tracing::info!(%target_uuid, "Embedding calculated (first 5 values): {:?}", &embedding_vec[..5.min(embedding_vec.len())]);
@@ -275,20 +266,18 @@ pub async fn search(
     State(state): State<AppState>,
     Json(payload): Json<SearchPayload>,
 ) -> Result<Json<SearchResponse>, StatusCode> {
-    let start = Instant::now(); // Record start time
+    let start = Instant::now();
 
-    // --- Payload Validation ---
     if payload.image_base64.trim().is_empty() {
         tracing::warn!("Received search request with empty image_base64");
         return Err(StatusCode::BAD_REQUEST);
     }
-    // --- End Validation ---
 
     tracing::debug!("Received search request");
 
     // Get query embedding using separated functions
     let img = decode_base64_to_image(&payload.image_base64)?;
-    let cropped_img = crop_face(img);
+    let cropped_img = crop_face(state.facedetect_detector.clone(), img).await?;
     let embedding_vec = get_embedding_from_image(cropped_img, &state.onnx_session).await?;
     tracing::info!(
         "Query embedding calculated (first 5 values): {:?}",
@@ -326,13 +315,11 @@ pub async fn search(
         })
         .collect();
 
-    let duration = start.elapsed(); // Calculate duration
+    let duration = start.elapsed();
     tracing::info!(duration = ?duration, results_count = results.len(), "Search successful"); // Log duration
 
     Ok(Json(SearchResponse { results }))
 }
-
-// --- Image Preprocessing Helper (moved here for locality) ---
 
 fn preprocess_image(
     img: DynamicImage,

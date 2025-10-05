@@ -17,7 +17,6 @@ use uuid::Uuid;
 
 mod handlers;
 
-// Estructura para associar uuid com embeddings
 #[derive(Clone)]
 pub struct EmbeddingEntry {
     pub uuid: Uuid,
@@ -25,7 +24,6 @@ pub struct EmbeddingEntry {
     pub embedding: Vec<f32>,
 }
 
-// Implementação de funções de similaridade para embeddings
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() {
         panic!("Vectors with different sizes!");
@@ -48,7 +46,6 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     dot_product / (norm_a.sqrt() * norm_b.sqrt())
 }
 
-// Armazenamento e função de busca para embeddings
 #[derive(Clone)]
 pub struct EmbeddingsStore {
     entries: Vec<EmbeddingEntry>,
@@ -70,7 +67,6 @@ impl SafeDetector {
     }
 }
 
-// Declara explicitamente que é seguro compartilhar entre threads
 unsafe impl Send for SafeDetector {}
 unsafe impl Sync for SafeDetector {}
 
@@ -222,6 +218,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             uuid UUID NOT NULL,
             origin VARCHAR(64) NOT NULL DEFAULT 'unknown',
             embeddings REAL[] NOT NULL
+            data JSONB
         );
         "#,
     )
