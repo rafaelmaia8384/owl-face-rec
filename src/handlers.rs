@@ -107,6 +107,12 @@ pub async fn crop_face(
         let h = (bbox.height() as f32 + (x_factor * 3.0)) as u32;
 
         let cropped = img.crop_imm(x, y, w, h);
+
+        //Salvar imagem de teste
+        cropped
+            .save("imagem.png")
+            .expect("Erro ao salvar o rosto cortado");
+
         Ok(cropped)
     })
     .await

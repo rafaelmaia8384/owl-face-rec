@@ -217,7 +217,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         CREATE TABLE IF NOT EXISTS targets (
             uuid UUID NOT NULL,
             origin VARCHAR(64) NOT NULL DEFAULT 'unknown',
-            embeddings REAL[] NOT NULL
+            embeddings REAL[] NOT NULL,
             data JSONB
         );
         "#,
