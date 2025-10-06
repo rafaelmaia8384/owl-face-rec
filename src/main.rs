@@ -156,8 +156,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .username(&postgres_user)
         .password(&postgres_password);
 
-    // 1. Connect to the default 'postgres' database
-    tracing::info!("Connecting to default 'postgres' database to ensure target database exists...");
+    // 1. Connect to the database
+    tracing::info!("Connecting to database to ensure target database exists...");
     let mut conn =
         sqlx::PgConnection::connect_with(&pg_options.clone().database("postgres")).await?;
 

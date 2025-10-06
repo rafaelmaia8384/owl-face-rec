@@ -18,7 +18,7 @@ services:
       RUST_LOG: ${RUST_LOG:-info}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_HOST: postgres
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       POSTGRES_DB: ${POSTGRES_DB:-owlfacerec}
       RUSTFACE_MIN_FACE_SIZE: ${RUSTFACE_MIN_FACE_SIZE:-50}
