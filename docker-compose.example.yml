@@ -2,12 +2,12 @@
 # Substitua REGISTRY_URL pelo URL do seu registry GitLab
 # Exemplo: registry.gitlab.com/seu-usuario/owl-face-rec
 
-version: '3.8'
+version: "3.8"
 
 services:
   # Serviço principal do owlfacerec
   owlfacerec:
-    image: ${REGISTRY_URL}/owlfacerec:latest  # ou use uma tag específica
+    image: ${REGISTRY_URL}/owlfacerec:latest # ou use uma tag específica
     container_name: owlfacerec
     restart: unless-stopped
     ports:
@@ -18,9 +18,14 @@ services:
       RUST_LOG: ${RUST_LOG:-info}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_HOST: postgres  # Nome do serviço do banco
+      POSTGRES_HOST: postgres
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       POSTGRES_DB: ${POSTGRES_DB:-owlfacerec}
+      RUSTFACE_MIN_FACE_SIZE: ${RUSTFACE_MIN_FACE_SIZE:-50}
+      RUSTFACE_SCORE_THRESH: ${RUSTFACE_SCORE_THRESH:-2.5}
+      RUSTFACE_PYRAMID_SCALE_FACTOR: ${RUSTFACE_PYRAMID_SCALE_FACTOR:-0.9}
+      RUSTFACE_SLIDE_WINDOW_STEP_X: ${RUSTFACE_SLIDE_WINDOW_STEP_X:-10}
+      RUSTFACE_SLIDE_WINDOW_STEP_Y: ${RUSTFACE_SLIDE_WINDOW_STEP_Y:-10}
     depends_on:
       - postgres
     volumes:
@@ -43,7 +48,6 @@ services:
 
 volumes:
   postgres_data:
-
 # Variáveis de ambiente necessárias (crie um arquivo .env):
 # REGISTRY_URL=registry.gitlab.com/seu-usuario/owl-face-rec
 # APP_PORT=3000

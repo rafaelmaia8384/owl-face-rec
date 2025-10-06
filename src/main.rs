@@ -249,10 +249,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut detector = rustface::create_detector(facedetect_model_path.to_str().unwrap())
         .expect("Face detector model load failed");
 
-    detector.set_min_face_size(50);
-    detector.set_score_thresh(2.5);
-    detector.set_pyramid_scale_factor(0.9);
-    detector.set_slide_window_step(8, 8);
+    let rustface_min_face_size: u32 = env::var("RUSTFACE_MIN_FACE_SIZE")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(50);
+    let rustface_score_thresh: f64 = env::var("RUSTFACE_SCORE_THRESH")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(2.5);
+    let rustface_pyramid_scale_factor: f32 = env::var("RUSTFACE_PYRAMID_SCALE_FACTOR")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or(0.9);
+    let rustface_slide_window_step_x: u32 = env::var("RUSTFACE_SLIDE_WINDOW_STEP_X")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(10);
+    let rustface_slide_window_step_y: u32 = env::var("RUSTFACE_SLIDE_WINDOW_STEP_Y")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(10);
+
+    detector.set_min_face_size(rustface_min_face_size);
+    detector.set_score_thresh(rustface_score_thresh);
+    detector.set_pyramid_scale_factor(rustface_pyramid_scale_factor);
+    detector.set_slide_window_step(rustface_slide_window_step_x, rustface_slide_window_step_y);
 
     let safe_detector = SafeDetector::new(detector);
 

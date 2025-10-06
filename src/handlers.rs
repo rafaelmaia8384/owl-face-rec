@@ -81,7 +81,6 @@ pub async fn crop_face(
         let mut detector = detector_arc.lock();
         let gray = img.to_luma8();
         let (width, height) = (gray.width(), gray.height());
-
         let image_data = rustface::ImageData::new(gray.as_raw(), width, height);
         let faces = detector.detect(&image_data);
 
