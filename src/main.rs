@@ -2,6 +2,11 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use minio::s3::ClientBuilder;
+use minio::s3::{
+    client::Client, creds::StaticProvider, http::BaseUrl, response::BucketExistsResponse,
+    types::S3Api,
+};
 use ort::{init, session::builder::GraphOptimizationLevel, session::Session};
 use rayon::prelude::*;
 use sqlx::postgres::PgPoolOptions;
@@ -121,7 +126,8 @@ pub struct AppState {
     pub onnx_session: Arc<Session>,
     pub db_pool: PgPool,
     pub embeddings_store: Arc<Mutex<EmbeddingsStore>>,
-    pub facedetect_detector: Arc<SafeDetector>,
+    pub facedetector: Arc<SafeDetector>,
+    pub s3_client: Arc<Client>,
 }
 
 #[tokio::main]
@@ -212,10 +218,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS targets (
+            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
             uuid UUID NOT NULL,
             origin VARCHAR(64) NOT NULL DEFAULT 'unknown',
             embeddings REAL[] NOT NULL,
-            data JSONB
+            image_key VARCHAR(64) NOT NULL,
+            extra JSONB
         );
         "#,
     )
@@ -279,6 +287,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!("Face detection model loaded and configured successfully");
 
+    // Minio client
+    tracing::info!("Configuring Minio client...");
+    let minio_bucket = env::var("MINIO_BUCKET").expect("MINIO_BUCKET must be set");
+    let minio_endpoint = env::var("MINIO_ENDPOINT").expect("MINIO_ENDPOINT must be set");
+    let minio_access_key = env::var("MINIO_ACCESS_KEY").expect("MINIO_ACCESS_KEY must be set");
+    let minio_secret_key = env::var("MINIO_SECRET_KEY").expect("MINIO_SECRET_KEY must be set");
+
+    let static_provider = StaticProvider::new(&minio_access_key, &minio_secret_key, None);
+    let s3_client = ClientBuilder::new(minio_endpoint.parse::<BaseUrl>()?)
+        .provider(Some(Box::new(static_provider)))
+        .build()?;
+
+    let resp: BucketExistsResponse = s3_client.bucket_exists(minio_bucket.clone()).send().await?;
+
+    // Make 'bucket_name' bucket if not exist.
+    if !resp.exists {
+        tracing::info!("Creating bucket: {}", &minio_bucket);
+        s3_client.create_bucket(&minio_bucket).send().await.unwrap();
+    };
+
+    tracing::info!(endpoint = %minio_endpoint, "Minio client configured successfully");
+
     // Inicializar o armazenamento de embeddings
     tracing::info!("Initializing embeddings store...");
     let mut embeddings_store = EmbeddingsStore::new();
@@ -307,7 +337,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         onnx_session: Arc::new(onnx_session),
         db_pool: pool.clone(),
         embeddings_store: Arc::new(Mutex::new(embeddings_store)),
-        facedetect_detector: Arc::new(safe_detector),
+        facedetector: Arc::new(safe_detector),
+        s3_client: Arc::new(s3_client),
     };
 
     // build our application with multiple routes and state

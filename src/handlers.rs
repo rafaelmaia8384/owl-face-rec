@@ -1,10 +1,14 @@
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{body::Bytes, extract::State, http::StatusCode, Json};
 use base64::{engine::general_purpose, Engine as _};
-use image::{DynamicImage, GenericImageView, ImageBuffer, Rgb};
+use image::{DynamicImage, GenericImageView, ImageBuffer, ImageFormat, Rgb};
+use minio::s3::segmented_bytes::SegmentedBytes;
+use minio::s3::types::S3Api;
 use ndarray::{Array, Ix4};
 use ort::{inputs, session::Session, session::SessionOutputs, value::Value};
 use serde::{Deserialize, Serialize};
 use sqlx;
+use std::env;
+use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::task;
@@ -25,6 +29,7 @@ pub struct RegisterPayload {
     target_uuid: Uuid,
     image_base64: String,
     origin: String,
+    extra: Option<serde_json::Value>,
 }
 
 // Define the request payload for /search/
@@ -215,27 +220,55 @@ pub async fn register(
 
     let target_uuid = payload.target_uuid;
     let origin = payload.origin.clone();
+    let extra = payload.extra.clone().unwrap_or(serde_json::Value::Null);
     tracing::debug!(%target_uuid, %origin, "Received registration request");
 
     // Get embedding using separated functions
     let img = decode_base64_to_image(&payload.image_base64)?;
-    let cropped_img = crop_face(state.facedetect_detector, img).await?;
+    let cropped_img = crop_face(state.facedetector, img.clone()).await?;
     let embedding_vec = get_embedding_from_image(cropped_img, &state.onnx_session).await?;
+    let image_key = format!("{}.png", Uuid::new_v4());
+    let minio_bucket = env::var("MINIO_BUCKET").expect("MINIO_BUCKET must be set");
+    let mut buffer = Cursor::new(Vec::new());
+
+    img.write_to(&mut buffer, ImageFormat::Png).map_err(|e| {
+        tracing::error!(error = %e, "Failed to write image to buffer");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let image_bytes = buffer.into_inner();
+    let segmented_bytes = SegmentedBytes::from(Bytes::from(image_bytes));
+
+    tracing::info!(%target_uuid, %origin, "Sending image do bucket...");
+    state
+        .s3_client
+        .put_object(minio_bucket, &image_key, segmented_bytes)
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to upload image to MinIO");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    tracing::info!(%target_uuid, "Image successfully sent");
 
     // Store the embedding in the database
-    tracing::info!(%target_uuid, %origin, "Storing embedding in the database..");
-    match sqlx::query("INSERT INTO targets (uuid, embeddings, origin) VALUES ($1, $2, $3)")
-        .bind(target_uuid)
-        .bind(&embedding_vec[..])
-        .bind(&origin)
-        .execute(&state.db_pool)
-        .await
+    tracing::info!(%target_uuid, %origin, "Storing embedding in the database...");
+    match sqlx::query(
+        "INSERT INTO targets (uuid, embeddings, image_key, origin, extra) VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(target_uuid)
+    .bind(&embedding_vec[..])
+    .bind(&image_key)
+    .bind(&origin)
+    .bind(extra)
+    .execute(&state.db_pool)
+    .await
     {
         Ok(_) => {
             tracing::info!(%target_uuid, "Successfully stored embedding in the database");
 
             // Add the embedding to in-memory storage
-            tracing::info!(%target_uuid, %origin, "Adding embedding to in-memory store..");
+            tracing::info!(%target_uuid, %origin, "Adding embedding to in-memory store...");
             let mut embeddings_store = match state.embeddings_store.lock() {
                 Ok(store) => store,
                 Err(e) => {
@@ -275,7 +308,7 @@ pub async fn search(
 
     // Get query embedding using separated functions
     let img = decode_base64_to_image(&payload.image_base64)?;
-    let cropped_img = crop_face(state.facedetect_detector, img).await?;
+    let cropped_img = crop_face(state.facedetector, img).await?;
     let embedding_vec = get_embedding_from_image(cropped_img, &state.onnx_session).await?;
     tracing::info!(
         "Query embedding calculated (first 5 values): {:?}",
