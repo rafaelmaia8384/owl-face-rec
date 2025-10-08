@@ -1,10 +1,22 @@
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{
+    body::Bytes,
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use base64::{engine::general_purpose, Engine as _};
-use image::{DynamicImage, GenericImageView, ImageBuffer, Rgb};
+use image::{DynamicImage, GenericImageView, ImageBuffer, ImageFormat, Rgb};
+use md5;
+use minio::s3::segmented_bytes::SegmentedBytes;
+use minio::s3::types::S3Api;
 use ndarray::{Array, Ix4};
 use ort::{inputs, session::Session, session::SessionOutputs, value::Value};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx;
+use sqlx::Row;
+use std::env;
+use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::task;
@@ -25,6 +37,7 @@ pub struct RegisterPayload {
     target_uuid: Uuid,
     image_base64: String,
     origin: String,
+    extra: Option<serde_json::Value>,
 }
 
 // Define the request payload for /search/
@@ -43,9 +56,11 @@ pub struct SearchResponse {
 
 #[derive(Serialize)]
 pub struct SearchResult {
+    id: i64,
     target_uuid: String,
     similarity: f32,
     origin: String,
+    image_key: String,
 }
 
 // Function to decode base64 and return the image (synchronous for performance)
@@ -81,7 +96,6 @@ pub async fn crop_face(
         let mut detector = detector_arc.lock();
         let gray = img.to_luma8();
         let (width, height) = (gray.width(), gray.height());
-
         let image_data = rustface::ImageData::new(gray.as_raw(), width, height);
         let faces = detector.detect(&image_data);
 
@@ -107,7 +121,7 @@ pub async fn crop_face(
         let x = (bbox.x() as f32 - x_factor) as u32;
         let y = (bbox.y() as f32 - y_factor) as u32;
         let w = (bbox.width() as f32 + x_factor) as u32;
-        let h = (bbox.height() as f32 + (x_factor * 3.0)) as u32;
+        let h = (bbox.height() as f32 + (y_factor * 3.0)) as u32;
 
         let cropped = img.crop_imm(x, y, w, h);
 
@@ -216,27 +230,65 @@ pub async fn register(
 
     let target_uuid = payload.target_uuid;
     let origin = payload.origin.clone();
+    let extra = payload.extra.clone().unwrap_or(serde_json::Value::Null);
     tracing::debug!(%target_uuid, %origin, "Received registration request");
 
     // Get embedding using separated functions
     let img = decode_base64_to_image(&payload.image_base64)?;
-    let cropped_img = crop_face(state.facedetect_detector, img).await?;
+    let cropped_img = crop_face(state.facedetector, img.clone()).await?;
     let embedding_vec = get_embedding_from_image(cropped_img, &state.onnx_session).await?;
+    let minio_bucket = env::var("MINIO_BUCKET").expect("MINIO_BUCKET must be set");
+    let mut buffer = Cursor::new(Vec::new());
+
+    img.write_to(&mut buffer, ImageFormat::WebP).map_err(|e| {
+        tracing::error!(error = %e, "Failed to write image to buffer");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let image_bytes = buffer.into_inner();
+    let image_key = format!("{:x}.webp", md5::compute(&image_bytes));
+    let segmented_bytes = SegmentedBytes::from(Bytes::from(image_bytes));
+
+    tracing::info!(%target_uuid, %origin, "Sending image do bucket...");
+    state
+        .s3_client
+        .put_object(minio_bucket, &image_key, segmented_bytes)
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to upload image to MinIO");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    tracing::info!(%target_uuid, "Image successfully sent");
 
     // Store the embedding in the database
-    tracing::info!(%target_uuid, %origin, "Storing embedding in the database..");
-    match sqlx::query("INSERT INTO targets (uuid, embeddings, origin) VALUES ($1, $2, $3)")
-        .bind(target_uuid)
-        .bind(&embedding_vec[..])
-        .bind(&origin)
-        .execute(&state.db_pool)
-        .await
+    tracing::info!(%target_uuid, %origin, "Storing embedding in the database...");
+    match sqlx::query(
+        r#"
+        INSERT INTO targets (uuid, embeddings, image_key, origin, extra)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id
+        "#,
+    )
+    .bind(target_uuid)
+    .bind(&embedding_vec[..])
+    .bind(&image_key)
+    .bind(&origin)
+    .bind(extra)
+    // .execute(&state.db_pool)
+    .fetch_one(&state.db_pool)
+    .await
     {
-        Ok(_) => {
+        Ok(record) => {
+            let id: i64 = record.try_get("id").map_err(|e| {
+                tracing::error!(error = %e, "Failed to get id from record");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+
             tracing::info!(%target_uuid, "Successfully stored embedding in the database");
 
             // Add the embedding to in-memory storage
-            tracing::info!(%target_uuid, %origin, "Adding embedding to in-memory store..");
+            tracing::info!(%target_uuid, %origin, "Adding embedding to in-memory store...");
             let mut embeddings_store = match state.embeddings_store.lock() {
                 Ok(store) => store,
                 Err(e) => {
@@ -244,7 +296,13 @@ pub async fn register(
                     return Err(StatusCode::INTERNAL_SERVER_ERROR);
                 }
             };
-            embeddings_store.add(target_uuid, origin.clone(), embedding_vec.clone());
+            embeddings_store.add(
+                id,
+                target_uuid,
+                origin.clone(),
+                embedding_vec.clone(),
+                image_key.clone(),
+            );
             tracing::info!(%target_uuid, "Successfully added embedding to in-memory store");
             tracing::info!(%target_uuid, "Total embeddings in memory: {}", embeddings_store.len());
 
@@ -276,7 +334,7 @@ pub async fn search(
 
     // Get query embedding using separated functions
     let img = decode_base64_to_image(&payload.image_base64)?;
-    let cropped_img = crop_face(state.facedetect_detector, img).await?;
+    let cropped_img = crop_face(state.facedetector, img).await?;
     let embedding_vec = get_embedding_from_image(cropped_img, &state.onnx_session).await?;
     tracing::info!(
         "Query embedding calculated (first 5 values): {:?}",
@@ -307,10 +365,12 @@ pub async fn search(
     // Format results
     let results: Vec<SearchResult> = similar_embeddings
         .into_iter()
-        .map(|(uuid, origin, similarity)| SearchResult {
+        .map(|(id, uuid, origin, image_key, similarity)| SearchResult {
+            id,
             target_uuid: uuid.to_string(),
             similarity,
             origin,
+            image_key,
         })
         .collect();
 
@@ -318,6 +378,41 @@ pub async fn search(
     tracing::info!(duration = ?duration, results_count = results.len(), "Search successful"); // Log duration
 
     Ok(Json(SearchResponse { results }))
+}
+
+pub async fn details(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    // consulta no banco
+    let row =
+        sqlx::query(r#"SELECT id, uuid, origin, image_key, extra FROM targets WHERE id = $1"#)
+            .bind(id)
+            .fetch_optional(&state.db_pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Database query failed");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+
+    match row {
+        Some(record) => {
+            let id: i64 = record.try_get("id").unwrap_or_default();
+            let uuid: uuid::Uuid = record.try_get("uuid").unwrap();
+            let origin: String = record.try_get("origin").unwrap_or_default();
+            let image_key: String = record.try_get("image_key").unwrap_or_default();
+            let extra: Option<serde_json::Value> = record.try_get("extra").unwrap_or(None);
+
+            Ok(Json(json!({
+                "id": id,
+                "uuid": uuid,
+                "origin": origin,
+                "image_key": image_key,
+                "extra": extra
+            })))
+        }
+        None => Err(StatusCode::NOT_FOUND),
+    }
 }
 
 fn preprocess_image(

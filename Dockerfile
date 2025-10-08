@@ -3,6 +3,9 @@
 # =================================================================
 FROM rust:1.81-slim AS builder
 
+RUN rustup install nightly
+RUN rustup default nightly
+
 # TARGETPLATFORM é preenchido automaticamente pelo 'docker buildx'
 # Ex: 'linux/amd64' ou 'linux/arm64'
 ARG TARGETPLATFORM

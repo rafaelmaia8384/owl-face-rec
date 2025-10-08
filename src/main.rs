@@ -2,6 +2,11 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use minio::s3::ClientBuilder;
+use minio::s3::{
+    client::Client, creds::StaticProvider, http::BaseUrl, response::BucketExistsResponse,
+    types::S3Api,
+};
 use ort::{init, session::builder::GraphOptimizationLevel, session::Session};
 use rayon::prelude::*;
 use sqlx::postgres::PgPoolOptions;
@@ -19,9 +24,11 @@ mod handlers;
 
 #[derive(Clone)]
 pub struct EmbeddingEntry {
+    pub id: i64,
     pub uuid: Uuid,
     pub origin: String,
     pub embedding: Vec<f32>,
+    pub image_key: String,
 }
 
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
@@ -77,11 +84,20 @@ impl EmbeddingsStore {
         }
     }
 
-    pub fn add(&mut self, uuid: Uuid, origin: String, embedding: Vec<f32>) {
+    pub fn add(
+        &mut self,
+        id: i64,
+        uuid: Uuid,
+        origin: String,
+        embedding: Vec<f32>,
+        image_key: String,
+    ) {
         self.entries.push(EmbeddingEntry {
+            id,
             uuid,
             embedding,
             origin,
+            image_key,
         });
     }
 
@@ -90,18 +106,24 @@ impl EmbeddingsStore {
         query: &[f32],
         threshold: f32,
         limit: usize,
-    ) -> Vec<(Uuid, String, f32)> {
-        let mut results: Vec<(Uuid, String, f32)> = self
+    ) -> Vec<(i64, Uuid, String, String, f32)> {
+        let mut results: Vec<(i64, Uuid, String, String, f32)> = self
             .entries
             .par_iter()
             .map(|entry| {
                 let similarity = cosine_similarity(query, &entry.embedding);
-                (entry.uuid, entry.origin.clone(), similarity)
+                (
+                    entry.id,
+                    entry.uuid,
+                    entry.origin.clone(),
+                    entry.image_key.clone(),
+                    similarity,
+                )
             })
-            .filter(|&(_, _, similarity)| similarity >= threshold)
+            .filter(|&(_, _, _, _, similarity)| similarity >= threshold)
             .collect();
 
-        results.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| b.4.partial_cmp(&a.4).unwrap_or(std::cmp::Ordering::Equal));
         results.truncate(limit);
         results
     }
@@ -121,7 +143,8 @@ pub struct AppState {
     pub onnx_session: Arc<Session>,
     pub db_pool: PgPool,
     pub embeddings_store: Arc<Mutex<EmbeddingsStore>>,
-    pub facedetect_detector: Arc<SafeDetector>,
+    pub facedetector: Arc<SafeDetector>,
+    pub s3_client: Arc<Client>,
 }
 
 #[tokio::main]
@@ -156,8 +179,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .username(&postgres_user)
         .password(&postgres_password);
 
-    // 1. Connect to the default 'postgres' database
-    tracing::info!("Connecting to default 'postgres' database to ensure target database exists...");
+    // 1. Connect to the database
+    tracing::info!("Connecting to database to ensure target database exists...");
     let mut conn =
         sqlx::PgConnection::connect_with(&pg_options.clone().database("postgres")).await?;
 
@@ -212,15 +235,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS targets (
+            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
             uuid UUID NOT NULL,
             origin VARCHAR(64) NOT NULL DEFAULT 'unknown',
             embeddings REAL[] NOT NULL,
-            data JSONB
+            image_key VARCHAR(64) NOT NULL,
+            extra JSONB
         );
         "#,
     )
     .execute(&pool)
     .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_targets_uuid ON targets (uuid);
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
     tracing::info!("'targets' table is ready");
 
     // Initialize ONNX Runtime environment globally
@@ -249,14 +283,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut detector = rustface::create_detector(facedetect_model_path.to_str().unwrap())
         .expect("Face detector model load failed");
 
-    detector.set_min_face_size(50);
-    detector.set_score_thresh(2.5);
-    detector.set_pyramid_scale_factor(0.9);
-    detector.set_slide_window_step(8, 8);
+    let rustface_min_face_size: u32 = env::var("RUSTFACE_MIN_FACE_SIZE")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(50);
+    let rustface_score_thresh: f64 = env::var("RUSTFACE_SCORE_THRESH")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(2.5);
+    let rustface_pyramid_scale_factor: f32 = env::var("RUSTFACE_PYRAMID_SCALE_FACTOR")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or(0.9);
+    let rustface_slide_window_step_x: u32 = env::var("RUSTFACE_SLIDE_WINDOW_STEP_X")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(10);
+    let rustface_slide_window_step_y: u32 = env::var("RUSTFACE_SLIDE_WINDOW_STEP_Y")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(10);
+
+    detector.set_min_face_size(rustface_min_face_size);
+    detector.set_score_thresh(rustface_score_thresh);
+    detector.set_pyramid_scale_factor(rustface_pyramid_scale_factor);
+    detector.set_slide_window_step(rustface_slide_window_step_x, rustface_slide_window_step_y);
 
     let safe_detector = SafeDetector::new(detector);
 
     tracing::info!("Face detection model loaded and configured successfully");
+
+    // Minio client
+    tracing::info!("Configuring Minio client...");
+    let minio_bucket = env::var("MINIO_BUCKET").expect("MINIO_BUCKET must be set");
+    let minio_endpoint = env::var("MINIO_ENDPOINT").expect("MINIO_ENDPOINT must be set");
+    let minio_access_key = env::var("MINIO_ACCESS_KEY").expect("MINIO_ACCESS_KEY must be set");
+    let minio_secret_key = env::var("MINIO_SECRET_KEY").expect("MINIO_SECRET_KEY must be set");
+
+    let static_provider = StaticProvider::new(&minio_access_key, &minio_secret_key, None);
+    let s3_client = ClientBuilder::new(minio_endpoint.parse::<BaseUrl>()?)
+        .provider(Some(Box::new(static_provider)))
+        .build()?;
+
+    let resp: BucketExistsResponse = s3_client.bucket_exists(minio_bucket.clone()).send().await?;
+
+    // Make 'bucket_name' bucket if not exist.
+    if !resp.exists {
+        tracing::info!("Creating bucket: {}", &minio_bucket);
+        s3_client.create_bucket(&minio_bucket).send().await.unwrap();
+    };
+
+    tracing::info!(endpoint = %minio_endpoint, "Minio client configured successfully");
 
     // Inicializar o armazenamento de embeddings
     tracing::info!("Initializing embeddings store...");
@@ -264,17 +341,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Carregar todos os embeddings existentes do banco de dados
     tracing::info!("Loading existing embeddings from database into memory...");
-    let all_embeddings = sqlx::query("SELECT uuid, embeddings, origin FROM targets")
+
+    let all_embeddings = sqlx::query("SELECT id, uuid, embeddings, origin, image_key FROM targets")
         .fetch_all(&pool)
         .await?;
 
     if !all_embeddings.is_empty() {
         for record in &all_embeddings {
+            let id: i64 = record.try_get("id")?;
             let uuid: Uuid = record.try_get("uuid")?;
             let origin: String = record.try_get("origin").unwrap_or_else(|_| "".to_string());
             let embeddings: Vec<f32> = record.try_get("embeddings")?;
+            let image_key: String = record
+                .try_get("image_key")
+                .unwrap_or_else(|_| "".to_string());
 
-            embeddings_store.add(uuid, origin, embeddings);
+            embeddings_store.add(id, uuid, origin, embeddings, image_key);
         }
         tracing::info!("Loaded {} embeddings into memory", embeddings_store.len());
     } else {
@@ -286,7 +368,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         onnx_session: Arc::new(onnx_session),
         db_pool: pool.clone(),
         embeddings_store: Arc::new(Mutex::new(embeddings_store)),
-        facedetect_detector: Arc::new(safe_detector),
+        facedetector: Arc::new(safe_detector),
+        s3_client: Arc::new(s3_client),
     };
 
     // build our application with multiple routes and state
@@ -295,6 +378,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/health/", get(handlers::health_check))
         .route("/register/", post(handlers::register))
         .route("/search/", post(handlers::search))
+        .route("/details/:id/", get(handlers::details))
         .with_state(app_state);
 
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
