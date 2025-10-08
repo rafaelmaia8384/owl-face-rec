@@ -1,4 +1,9 @@
-use axum::{body::Bytes, extract::State, http::StatusCode, Json};
+use axum::{
+    body::Bytes,
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use base64::{engine::general_purpose, Engine as _};
 use image::{DynamicImage, GenericImageView, ImageBuffer, ImageFormat, Rgb};
 use md5;
@@ -7,6 +12,7 @@ use minio::s3::types::S3Api;
 use ndarray::{Array, Ix4};
 use ort::{inputs, session::Session, session::SessionOutputs, value::Value};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx;
 use sqlx::Row;
 use std::env;
@@ -372,6 +378,41 @@ pub async fn search(
     tracing::info!(duration = ?duration, results_count = results.len(), "Search successful"); // Log duration
 
     Ok(Json(SearchResponse { results }))
+}
+
+pub async fn details(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    // consulta no banco
+    let row =
+        sqlx::query(r#"SELECT id, uuid, origin, image_key, extra FROM targets WHERE id = $1"#)
+            .bind(id)
+            .fetch_optional(&state.db_pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Database query failed");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+
+    match row {
+        Some(record) => {
+            let id: i64 = record.try_get("id").unwrap_or_default();
+            let uuid: uuid::Uuid = record.try_get("uuid").unwrap();
+            let origin: String = record.try_get("origin").unwrap_or_default();
+            let image_key: String = record.try_get("image_key").unwrap_or_default();
+            let extra: Option<serde_json::Value> = record.try_get("extra").unwrap_or(None);
+
+            Ok(Json(json!({
+                "id": id,
+                "uuid": uuid,
+                "origin": origin,
+                "image_key": image_key,
+                "extra": extra
+            })))
+        }
+        None => Err(StatusCode::NOT_FOUND),
+    }
 }
 
 fn preprocess_image(
