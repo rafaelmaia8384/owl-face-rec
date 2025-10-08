@@ -115,7 +115,7 @@ pub async fn crop_face(
         let x = (bbox.x() as f32 - x_factor) as u32;
         let y = (bbox.y() as f32 - y_factor) as u32;
         let w = (bbox.width() as f32 + x_factor) as u32;
-        let h = (bbox.height() as f32 + (x_factor * 3.0)) as u32;
+        let h = (bbox.height() as f32 + (y_factor * 3.0)) as u32;
 
         let cropped = img.crop_imm(x, y, w, h);
 
