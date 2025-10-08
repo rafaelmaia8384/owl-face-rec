@@ -246,6 +246,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .execute(&pool)
     .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_targets_uuid ON targets (uuid);
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
     tracing::info!("'targets' table is ready");
 
     // Initialize ONNX Runtime environment globally
