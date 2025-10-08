@@ -20,3 +20,4 @@ ndarray = "0.15"
 sqlx = { version = "0.8.5", features = ["postgres", "runtime-tokio-native-tls", "uuid"] }
 rayon = "1.10"
 minio = "0.3.0"
+md5 = "0.8.0"

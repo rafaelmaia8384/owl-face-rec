@@ -1,12 +1,14 @@
 use axum::{body::Bytes, extract::State, http::StatusCode, Json};
 use base64::{engine::general_purpose, Engine as _};
 use image::{DynamicImage, GenericImageView, ImageBuffer, ImageFormat, Rgb};
+use md5;
 use minio::s3::segmented_bytes::SegmentedBytes;
 use minio::s3::types::S3Api;
 use ndarray::{Array, Ix4};
 use ort::{inputs, session::Session, session::SessionOutputs, value::Value};
 use serde::{Deserialize, Serialize};
 use sqlx;
+use sqlx::Row;
 use std::env;
 use std::io::Cursor;
 use std::sync::Arc;
@@ -48,9 +50,11 @@ pub struct SearchResponse {
 
 #[derive(Serialize)]
 pub struct SearchResult {
+    id: i64,
     target_uuid: String,
     similarity: f32,
     origin: String,
+    image_key: String,
 }
 
 // Function to decode base64 and return the image (synchronous for performance)
@@ -227,16 +231,16 @@ pub async fn register(
     let img = decode_base64_to_image(&payload.image_base64)?;
     let cropped_img = crop_face(state.facedetector, img.clone()).await?;
     let embedding_vec = get_embedding_from_image(cropped_img, &state.onnx_session).await?;
-    let image_key = format!("{}.png", Uuid::new_v4());
     let minio_bucket = env::var("MINIO_BUCKET").expect("MINIO_BUCKET must be set");
     let mut buffer = Cursor::new(Vec::new());
 
-    img.write_to(&mut buffer, ImageFormat::Png).map_err(|e| {
+    img.write_to(&mut buffer, ImageFormat::WebP).map_err(|e| {
         tracing::error!(error = %e, "Failed to write image to buffer");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
     let image_bytes = buffer.into_inner();
+    let image_key = format!("{:x}.webp", md5::compute(&image_bytes));
     let segmented_bytes = SegmentedBytes::from(Bytes::from(image_bytes));
 
     tracing::info!(%target_uuid, %origin, "Sending image do bucket...");
@@ -254,17 +258,27 @@ pub async fn register(
     // Store the embedding in the database
     tracing::info!(%target_uuid, %origin, "Storing embedding in the database...");
     match sqlx::query(
-        "INSERT INTO targets (uuid, embeddings, image_key, origin, extra) VALUES ($1, $2, $3, $4, $5)",
+        r#"
+        INSERT INTO targets (uuid, embeddings, image_key, origin, extra)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id
+        "#,
     )
     .bind(target_uuid)
     .bind(&embedding_vec[..])
     .bind(&image_key)
     .bind(&origin)
     .bind(extra)
-    .execute(&state.db_pool)
+    // .execute(&state.db_pool)
+    .fetch_one(&state.db_pool)
     .await
     {
-        Ok(_) => {
+        Ok(record) => {
+            let id: i64 = record.try_get("id").map_err(|e| {
+                tracing::error!(error = %e, "Failed to get id from record");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+
             tracing::info!(%target_uuid, "Successfully stored embedding in the database");
 
             // Add the embedding to in-memory storage
@@ -276,7 +290,13 @@ pub async fn register(
                     return Err(StatusCode::INTERNAL_SERVER_ERROR);
                 }
             };
-            embeddings_store.add(target_uuid, origin.clone(), embedding_vec.clone());
+            embeddings_store.add(
+                id,
+                target_uuid,
+                origin.clone(),
+                embedding_vec.clone(),
+                image_key.clone(),
+            );
             tracing::info!(%target_uuid, "Successfully added embedding to in-memory store");
             tracing::info!(%target_uuid, "Total embeddings in memory: {}", embeddings_store.len());
 
@@ -339,10 +359,12 @@ pub async fn search(
     // Format results
     let results: Vec<SearchResult> = similar_embeddings
         .into_iter()
-        .map(|(uuid, origin, similarity)| SearchResult {
+        .map(|(id, uuid, origin, image_key, similarity)| SearchResult {
+            id,
             target_uuid: uuid.to_string(),
             similarity,
             origin,
+            image_key,
         })
         .collect();
 

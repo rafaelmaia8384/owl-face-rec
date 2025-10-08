@@ -24,9 +24,11 @@ mod handlers;
 
 #[derive(Clone)]
 pub struct EmbeddingEntry {
+    pub id: i64,
     pub uuid: Uuid,
     pub origin: String,
     pub embedding: Vec<f32>,
+    pub image_key: String,
 }
 
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
@@ -82,11 +84,20 @@ impl EmbeddingsStore {
         }
     }
 
-    pub fn add(&mut self, uuid: Uuid, origin: String, embedding: Vec<f32>) {
+    pub fn add(
+        &mut self,
+        id: i64,
+        uuid: Uuid,
+        origin: String,
+        embedding: Vec<f32>,
+        image_key: String,
+    ) {
         self.entries.push(EmbeddingEntry {
+            id,
             uuid,
             embedding,
             origin,
+            image_key,
         });
     }
 
@@ -95,18 +106,24 @@ impl EmbeddingsStore {
         query: &[f32],
         threshold: f32,
         limit: usize,
-    ) -> Vec<(Uuid, String, f32)> {
-        let mut results: Vec<(Uuid, String, f32)> = self
+    ) -> Vec<(i64, Uuid, String, String, f32)> {
+        let mut results: Vec<(i64, Uuid, String, String, f32)> = self
             .entries
             .par_iter()
             .map(|entry| {
                 let similarity = cosine_similarity(query, &entry.embedding);
-                (entry.uuid, entry.origin.clone(), similarity)
+                (
+                    entry.id,
+                    entry.uuid,
+                    entry.origin.clone(),
+                    entry.image_key.clone(),
+                    similarity,
+                )
             })
-            .filter(|&(_, _, similarity)| similarity >= threshold)
+            .filter(|&(_, _, _, _, similarity)| similarity >= threshold)
             .collect();
 
-        results.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| b.4.partial_cmp(&a.4).unwrap_or(std::cmp::Ordering::Equal));
         results.truncate(limit);
         results
     }
@@ -315,17 +332,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Carregar todos os embeddings existentes do banco de dados
     tracing::info!("Loading existing embeddings from database into memory...");
-    let all_embeddings = sqlx::query("SELECT uuid, embeddings, origin FROM targets")
+
+    let all_embeddings = sqlx::query("SELECT id, uuid, embeddings, origin, image_key FROM targets")
         .fetch_all(&pool)
         .await?;
 
     if !all_embeddings.is_empty() {
         for record in &all_embeddings {
+            let id: i64 = record.try_get("id")?;
             let uuid: Uuid = record.try_get("uuid")?;
             let origin: String = record.try_get("origin").unwrap_or_else(|_| "".to_string());
             let embeddings: Vec<f32> = record.try_get("embeddings")?;
+            let image_key: String = record
+                .try_get("image_key")
+                .unwrap_or_else(|_| "".to_string());
 
-            embeddings_store.add(uuid, origin, embeddings);
+            embeddings_store.add(id, uuid, origin, embeddings, image_key);
         }
         tracing::info!("Loaded {} embeddings into memory", embeddings_store.len());
     } else {
