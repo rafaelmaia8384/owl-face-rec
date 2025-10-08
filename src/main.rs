@@ -1,3 +1,4 @@
+use crate::openapi::ApiDoc;
 use axum::{
     routing::{get, post},
     Router,
@@ -18,9 +19,12 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 
 mod handlers;
+mod openapi;
 
 #[derive(Clone)]
 pub struct EmbeddingEntry {
@@ -372,14 +376,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         s3_client: Arc::new(s3_client),
     };
 
-    // build our application with multiple routes and state
-    let app = Router::new()
+    let app: Router = Router::new() // Sem <AppState> explícito ainda
         .route("/", get(handlers::health_check))
         .route("/health/", get(handlers::health_check))
         .route("/register/", post(handlers::register))
         .route("/search/", post(handlers::search))
         .route("/details/:id/", get(handlers::details))
-        .with_state(app_state);
+        // Merge SwaggerUi AQUI (stateless com stateless)
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()));
+
+    // ADICIONE .with_state() UMA VEZ, no final
+    let app = app.with_state(app_state);
 
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port = env::var("PORT").unwrap_or_else(|_| "3000".to_string());
@@ -387,8 +394,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr: SocketAddr = addr_str.parse().expect("Invalid address format");
 
     tracing::info!(address = %addr, "listening on address");
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
 
     Ok(())
 }
