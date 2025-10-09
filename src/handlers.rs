@@ -20,7 +20,7 @@ use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::task;
-use utoipa::{schema, ToSchema};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::AppState;
