@@ -6,7 +6,7 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs
 RUN cargo build --release && rm -rf src
 
 COPY . .
-RUN cargo build --release
+RUN touch src/force-compile.txt && cargo build --release
 
 FROM debian:bookworm-slim
 
