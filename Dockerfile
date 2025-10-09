@@ -1,75 +1,21 @@
-# =================================================================
-# Estágio 1: Builder Multi-Arquitetura
-# =================================================================
-FROM rust:1.81-slim AS builder
+ARG RUST_VERSION=1.70
+ARG TARGET=x86_64-unknown-linux-musl
 
-ARG TARGETPLATFORM
+FROM rust:${RUST_VERSION} as builder
+
+RUN apt-get update && apt-get install -y \
+    musl-tools \
+    && rustup target add x86_64-unknown-linux-musl \
+    && rustup target add aarch64-unknown-linux-musl \
+    && cargo install cross
+
 WORKDIR /app
-
-# Instala o cross
-RUN cargo install cross --git https://github.com/cross-rs/cross
-
-# Instala dependências específicas por arquitetura
-RUN apt-get update && \
-    case ${TARGETPLATFORM} in \
-        "linux/arm64") \
-            dpkg --add-architecture arm64 && \
-            apt-get update && \
-            apt-get install -y --no-install-recommends \
-                pkg-config \
-                gcc-aarch64-linux-gnu \
-                libc6-dev-arm64-cross \
-                libssl-dev:arm64 \
-                libstdc++-12-dev:arm64 && \
-            rustup target add aarch64-unknown-linux-gnu \
-        ;; \
-        "linux/amd64") \
-            apt-get install -y --no-install-recommends \
-                pkg-config \
-                g++ \
-                libssl-dev \
-                libstdc++-12-dev \
-        ;; \
-    esac && \
-    rm -rf /var/lib/apt/lists/*
-
 COPY . .
 
-# Compila usando cross
-RUN case ${TARGETPLATFORM} in \
-        "linux/arm64") \
-            cross build --release --target aarch64-unknown-linux-gnu && \
-            cp ./target/aarch64-unknown-linux-gnu/release/owlfacerec ./owlfacerec \
-        ;; \
-        "linux/amd64") \
-            cargo build --release && \
-            cp ./target/release/owlfacerec ./owlfacerec \
-        ;; \
-    esac
+ARG TARGET
+RUN cross build --target $TARGET --release
 
-# =================================================================
-# Estágio 2: Runtime (mantenha igual)
-# =================================================================
-FROM debian:bookworm-slim AS runtime
-ARG TARGETPLATFORM
-WORKDIR /app
-
-RUN apt-get update && \
-    case ${TARGETPLATFORM} in \
-        "linux/arm64") \
-            dpkg --add-architecture arm64 && \
-            apt-get update && \
-            apt-get install -y --no-install-recommends \
-                libssl3:arm64 \
-                libstdc++6:arm64 \
-        ;; \
-        "linux/amd64") \
-            apt-get install -y --no-install-recommends \
-                openssl \
-                libstdc++6 \
-        ;; \
-    esac && \
-    rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /app/owlfacerec /app/
-CMD ["./owlfacerec"]
+FROM alpine:latest
+RUN apk add --no-cache ca-certificates
+COPY --from=builder /app/target/$TARGET/release/owl-face-rec /usr/local/bin/owl-face-rec
+CMD ["./owl-face-rec"]
