@@ -188,33 +188,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut conn =
         sqlx::PgConnection::connect_with(&pg_options.clone().database("postgres")).await?;
 
-    // 2. Try to create the target database
-    tracing::info!(target_db = %postgres_db, "Attempting to create database if it doesn't exist...");
-    match sqlx::query(&format!("CREATE DATABASE \"{}\"", postgres_db))
-        .execute(&mut conn)
-        .await
-    {
-        Ok(_) => {
-            tracing::info!(target_db = %postgres_db, "Database created successfully or already existed")
-        }
-        Err(e) => {
-            if let Some(db_err) = e.as_database_error() {
-                // Check for PostgreSQL error code '42P04' (database already exists)
-                if db_err.code().map_or(false, |code| code == "42P04") {
-                    tracing::info!(target_db = %postgres_db, "Database already exists");
-                } else {
-                    tracing::error!(error = %e, target_db = %postgres_db, "Failed to create database");
-                    return Err(e.into()); // Return the original error
-                }
-            } else {
-                tracing::error!(error = %e, target_db = %postgres_db, "Non-database error occurred during creation check");
-                return Err(e.into()); // Return the original error
-            }
-        }
-    }
-    // Connection to 'postgres' DB is implicitly closed when 'conn' goes out of scope here.
-    // --- End Database Creation Logic ---
-
     // 4. Connect to the target database for the application using a pool
     let target_db_url = format!(
         "postgres://{}:{}@{}:{}/{}",
