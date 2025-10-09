@@ -25,12 +25,6 @@ use uuid::Uuid;
 use crate::AppState;
 use crate::SafeDetector;
 
-// Define a response payload struct
-#[derive(Serialize)]
-pub struct ResponsePayload {
-    reply: String,
-}
-
 // Define the request payload for /register/
 #[derive(Deserialize)]
 pub struct RegisterPayload {
