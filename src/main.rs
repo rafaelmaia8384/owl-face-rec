@@ -81,6 +81,12 @@ impl SafeDetector {
 unsafe impl Send for SafeDetector {}
 unsafe impl Sync for SafeDetector {}
 
+impl Default for EmbeddingsStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EmbeddingsStore {
     pub fn new() -> Self {
         Self {

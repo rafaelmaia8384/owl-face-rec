@@ -1,3 +1,104 @@
-build:
+stages:
+  - validate
+  - build
+  - deploy
+
+cache:
+  key: rust-cache-${CI_COMMIT_REF_SLUG}
+  paths:
+    - target/
+    - .cargo/
+  policy: pull-push
+
+variables:
+  CARGO_HOME: "${CI_PROJECT_DIR}/.cargo"
+  RUSTUP_HOME: "${CI_PROJECT_DIR}/.rustup"
+
+# Setup Rust
+.setup_rust: &setup_rust
+  before_script:
+    - export CARGO_HOME="${CI_PROJECT_DIR}/.cargo"
+    - export RUSTUP_HOME="${CI_PROJECT_DIR}/.rustup"
+    - |
+      if ! command -v rustup &> /dev/null; then
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+        source "${CARGO_HOME}/env"
+      fi
+    - rustc --version
+    - cargo --version
+
+validate_merge:
+  stage: validate
   script:
-    - echo "Mock de build"
+    - |
+      echo "🔍 Validando regras de merge..."
+      echo "Source: $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"
+      echo "Target: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+
+      if [[ "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" == "main" ]]; then
+        if [[ "$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME" != "stage" ]]; then
+          echo "❌ ERRO CRÍTICO: Merge para 'main' PERMITIDO APENAS de 'stage'"
+          echo "📋 Branch atual: $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"
+          echo "💡 Fluxo correto: feature → stage → main"
+          exit 1
+        fi
+      fi
+      echo "✅ Validação de merge concluída com sucesso"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  allow_failure: false
+
+# Build Stage
+build:stage:
+  stage: build
+  <<: *setup_rust
+  script:
+    - cargo build --verbose
+    - ls -la target/debug/
+  artifacts:
+    paths:
+      - target/debug/
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_REF_NAME == "stage"
+
+# Deploy Stage (automático)
+deploy:stage:
+  stage: deploy
+  script:
+    - echo "Deploying to stage environment..."
+    # scp target/debug/your-binary user@stage-server:/app/
+  needs: ["build:stage"]
+  environment:
+    name: stage
+    url: https://stage.seuapp.com
+  rules:
+    - if: $CI_COMMIT_REF_NAME == "stage"
+
+# Build Main (release)
+build:prod:
+  stage: build
+  <<: *setup_rust
+  script:
+    - cargo build --release --verbose
+    - ls -lh target/release/
+  artifacts:
+    paths:
+      - target/release/
+    expire_in: 1 month
+  rules:
+    - if: $CI_COMMIT_REF_NAME == "main"
+
+# Deploy Main (manual)
+deploy:prod:
+  stage: deploy
+  script:
+    - echo "Deploying to production..."
+    # scp target/release/your-binary user@prod-server:/app/
+  environment:
+    name: production
+    url: https://seuapp.com
+  needs: ["build:prod"]
+  when: manual
+  rules:
+    - if: $CI_COMMIT_REF_NAME == "main"
