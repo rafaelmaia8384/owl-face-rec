@@ -12,12 +12,8 @@ ARG TARGETPLATFORM
 
 WORKDIR /app
 
-<<<<<<< HEAD
 # ENV CARGO_BUILD_JOBS=1
 RUN cargo install cross --git https://github.com/cross-rs/cross
-=======
-ENV CARGO_BUILD_JOBS=1
->>>>>>> add-api-doc
 
 # Instala as dependências de build com base na arquitetura de destino
 RUN apt-get update && \
