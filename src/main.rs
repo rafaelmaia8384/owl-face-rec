@@ -176,19 +176,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let postgres_port = env::var("POSTGRES_PORT").unwrap_or_else(|_| "5432".to_string());
     let postgres_db = env::var("POSTGRES_DB").unwrap_or_else(|_| "owlfacerec".to_string());
 
-    // --- Database Creation Logic ---
-    let pg_options = sqlx::postgres::PgConnectOptions::new()
-        .host(&postgres_host)
-        .port(postgres_port.parse::<u16>()?)
-        .username(&postgres_user)
-        .password(&postgres_password);
-
-    // 1. Connect to the database
-    tracing::info!("Connecting to database to ensure target database exists...");
-    let mut conn =
-        sqlx::PgConnection::connect_with(&pg_options.clone().database("postgres")).await?;
-
-    // 4. Connect to the target database for the application using a pool
+    // Connect to the target database for the application using a pool
     let target_db_url = format!(
         "postgres://{}:{}@{}:{}/{}",
         postgres_user, postgres_password, postgres_host, postgres_port, postgres_db
@@ -203,11 +191,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .connect(&target_db_url)
         .await?;
 
-    // 5. Ping the database to verify connection
+    // Ping the database to verify connection
     pool.acquire().await?.ping().await?;
     tracing::info!("Connection to target database '{}' successful", postgres_db);
 
-    // 6. Create 'targets' table if it doesn't exist
+    // Create 'targets' table if it doesn't exist
     tracing::info!("Ensuring 'targets' table exists...");
     sqlx::query(
         r#"
