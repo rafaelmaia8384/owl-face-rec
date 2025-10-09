@@ -8,7 +8,7 @@ RUN cargo build --release && rm -rf src
 COPY . .
 RUN cargo build --release
 
-FROM gcr.io/distroless/cc-debian12
+FROM debian:bookworm-slim
 
 COPY --from=builder /app/target/release/owl-face-rec /usr/local/bin/owl-face-rec
 
