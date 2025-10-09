@@ -1,27 +1,34 @@
-// src/openapi.rs
 use utoipa::OpenApi;
 
-// Importe o módulo handlers para visibilidade (resolve "unresolved module `handlers`")
+// Importe as structs necessárias
 use crate::handlers;
-
-// Isso traz as funções anotadas com #[utoipa::path] e as structs no escopo
-// (O macro gera __path_* internamente, mas use crate::handlers; basta)
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(  // Agora resolve handlers:: porque o módulo está importado
+    paths(
         handlers::health_check,
         handlers::register,
         handlers::search,
         handlers::details
     ),
     components(
-        schemas(  // Schemas agora no escopo via use crate::handlers;
+        schemas(
             handlers::RegisterPayload,
             handlers::SearchPayload,
             handlers::SearchResponse,
             handlers::SearchResult
         )
+    ),
+    tags(
+        (name = "health", description = "Health check endpoints"),
+        (name = "registration", description = "User registration endpoints"),
+        (name = "search", description = "Face search endpoints"),
+        (name = "details", description = "User details endpoints")
+    ),
+    info(
+        title = "OwlFaceRec API",
+        description = "API para reconhecimento facial usando ArcFace",
+        version = "1.0.0"
     )
 )]
 pub struct ApiDoc;

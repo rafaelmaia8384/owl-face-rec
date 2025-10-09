@@ -379,6 +379,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let swagger_ui = SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi());
 
     let app = Router::new()
+        .merge(swagger_ui)
         .route("/", get(handlers::health_check))
         .route("/health/", get(handlers::health_check))
         .route("/register/", post(handlers::register))

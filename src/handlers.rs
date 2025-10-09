@@ -33,6 +33,7 @@ pub struct RegisterPayload {
     target_uuid: Uuid,
     image_base64: String,
     origin: String,
+    #[schema(value_type = Json)]
     extra: Option<serde_json::Value>,
 }
 
@@ -40,7 +41,9 @@ pub struct RegisterPayload {
 #[derive(Deserialize, ToSchema)]
 pub struct SearchPayload {
     image_base64: String,
+    #[schema(example = 0.7)]
     threshold: Option<f32>,
+    #[schema(example = 50)]
     limit: Option<usize>,
 }
 
@@ -197,9 +200,10 @@ async fn get_embedding_from_image(
 // --- Handlers ---
 
 // Handler for GET / route, returns 200 OK
-#[utoipa::path( 
+#[utoipa::path(
     get,
     path = "/health/",
+    tag = "health",
     responses(
         (status = 200, description = "Health check OK")
     )
@@ -212,7 +216,8 @@ pub async fn health_check() -> axum::http::StatusCode {
 #[utoipa::path(
     post,
     path = "/register/",
-    request_body = RegisterPayload,  // Infere do Json<RegisterPayload>
+    tag = "registration",
+    request_body = RegisterPayload,
     responses(
         (status = 201, description = "Registro criado com sucesso"),
         (status = 400, description = "Payload inválido ou erro de registro")
@@ -334,10 +339,12 @@ pub async fn register(
 #[utoipa::path(
     post,
     path = "/search/",
+    tag = "search",
     request_body = SearchPayload,
     responses(
         (status = 200, description = "Busca realizada", body = SearchResponse),
-        (status = 400, description = "Payload inválido ou erro na busca")
+        (status = 400, description = "Payload inválido ou erro na busca"),
+        (status = 422, description = "Rosto não encontrado ou mais de um rosto presente")
     )
 )]
 pub async fn search(
@@ -405,6 +412,7 @@ pub async fn search(
 #[utoipa::path(
     get,
     path = "/details/{id}/",
+    tag = "details",
     params(
         ("id" = i64, Path, description = "ID do item para detalhes")
     ),
