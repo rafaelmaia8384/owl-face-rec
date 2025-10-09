@@ -1,21 +1,22 @@
-ARG RUST_VERSION=1.70
-ARG TARGET=x86_64-unknown-linux-musl
-
-FROM rust:${RUST_VERSION} as builder
-
-RUN apt-get update && apt-get install -y \
-    musl-tools \
-    && rustup target add x86_64-unknown-linux-musl \
-    && rustup target add aarch64-unknown-linux-musl \
-    && cargo install cross
-
+# Etapa 1: build
+FROM rust:1.81 AS builder
 WORKDIR /app
+
+# Copia manifestos primeiro para cache das dependências
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+RUN cargo build --release && rm -rf src
+
+# Copia o restante do código e compila o binário final
 COPY . .
+RUN cargo build --release
 
-ARG TARGET
-RUN cross build --target $TARGET --release
+# Etapa 2: imagem final mínima
+FROM gcr.io/distroless/cc-debian12
 
-FROM alpine:latest
-RUN apk add --no-cache ca-certificates
-COPY --from=builder /app/target/$TARGET/release/owl-face-rec /usr/local/bin/owl-face-rec
+# Copia apenas o binário
+COPY --from=builder /app/target/release/owl-face-rec /usr/local/bin/owl-face-rec
+
+# Define o ponto de entrada
+USER nonroot:nonroot
 CMD ["./owl-face-rec"]
