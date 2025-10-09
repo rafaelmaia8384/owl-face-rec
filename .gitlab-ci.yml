@@ -7,20 +7,15 @@ build_multi_arch_manual_main:
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
     DOCKER_HOST: "tcp://docker:2376"
-    DOCKER_TLS_VERIFY: "1"
-    DOCKER_CERT_PATH: "/certs/client"
+    DOCKER_TLS_VERIFY: "0" # Desabilita TLS verification para simplificar
+    DOCKER_BUILDKIT: "1"
   before_script:
-    # Login no registro de contêiner do GitLab
-    - echo "Logging into GitLab Container Registry..."
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    # Habilita o binfmt_misc para emulação multi-arquitetura via QEMU
     - docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-    # Configura o Buildx
-    - docker buildx create --use --name multi-arch-builder
+    # Configuração simplificada do Buildx
+    - docker buildx create --use --name multi-arch-builder --driver docker-container --driver-opt network=host
     - docker buildx inspect --bootstrap
   script:
-    # Constrói E envia a imagem para as arquiteturas especificadas
-    - echo "Building and pushing multi-architecture image for linux/amd64 and linux/arm64..."
     - |
       docker buildx build \
         --platform linux/amd64,linux/arm64 \
