@@ -1,17 +1,23 @@
 FROM rustlang/rust:nightly AS builder
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY Cargo.toml Cargo.lock ./
 COPY . .
 
 RUN cargo build --release
 
-FROM alpine:latest
+FROM debian:bookworm-slim
 
-RUN apk add --no-cache \
-    openssl \
-    openssl-dev \
-    ca-certificates
+RUN apt-get update && apt-get install -y \
+    libssl3 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/owl-face-rec /usr/local/bin/owl-face-rec
+
 CMD ["/usr/local/bin/owl-face-rec"]
