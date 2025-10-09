@@ -11,8 +11,10 @@ variables:
   before_script:
     - apt-get update
     - apt-get install -y docker.io
+    - export PATH="$CARGO_HOME/bin:$PATH"
     - cargo install cross
   script:
+    - export PATH="$CARGO_HOME/bin:$PATH"
     - cross build --target $TARGET --release
     - mkdir -p artifacts
     - cp target/$TARGET/release/owl-face-rec artifacts/owl-face-rec-$TARGET
