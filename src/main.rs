@@ -1,3 +1,4 @@
+use crate::openapi::ApiDoc;
 use axum::{
     routing::{get, post},
     Router,
@@ -18,9 +19,12 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 
 mod handlers;
+mod openapi;
 
 #[derive(Clone)]
 pub struct EmbeddingEntry {
@@ -372,8 +376,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         s3_client: Arc::new(s3_client),
     };
 
-    // build our application with multiple routes and state
+    let swagger_ui = SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi());
+
     let app = Router::new()
+        .merge(swagger_ui)
         .route("/", get(handlers::health_check))
         .route("/health/", get(handlers::health_check))
         .route("/register/", post(handlers::register))
