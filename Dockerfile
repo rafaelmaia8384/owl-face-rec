@@ -1,21 +1,23 @@
-ARG RUST_VERSION=1.70
-ARG TARGET=x86_64-unknown-linux-musl
-
-FROM rust:${RUST_VERSION} as builder
+FROM rustlang/rust:nightly AS builder
+WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
-    musl-tools \
-    && rustup target add x86_64-unknown-linux-musl \
-    && rustup target add aarch64-unknown-linux-musl \
-    && cargo install cross
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
 COPY . .
 
-ARG TARGET
-RUN cross build --target $TARGET --release
+RUN cargo build --release
 
-FROM alpine:latest
-RUN apk add --no-cache ca-certificates
-COPY --from=builder /app/target/$TARGET/release/owl-face-rec /usr/local/bin/owl-face-rec
-CMD ["./owl-face-rec"]
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    libssl3 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/target/release/owl-face-rec /usr/local/bin/owl-face-rec
+
+CMD ["/usr/local/bin/owl-face-rec"]
