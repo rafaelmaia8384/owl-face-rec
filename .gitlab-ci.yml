@@ -74,7 +74,6 @@ deploy:stage:
 # Build Main (release)
 build:prod:
   stage: build
-  <<: *setup_rust
   script:
     - echo "OK"
     # - cargo build --release --verbose
