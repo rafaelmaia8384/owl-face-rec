@@ -20,35 +20,40 @@ use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::task;
+use utoipa::{schema, ToSchema};
 use uuid::Uuid;
 
 use crate::AppState;
 use crate::SafeDetector;
 
 // Define the request payload for /register/
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct RegisterPayload {
+    #[schema(value_type = String, format = "uuid")]
     target_uuid: Uuid,
     image_base64: String,
     origin: String,
+    #[schema(value_type = Json)]
     extra: Option<serde_json::Value>,
 }
 
 // Define the request payload for /search/
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct SearchPayload {
     image_base64: String,
+    #[schema(example = 0.7)]
     threshold: Option<f32>,
+    #[schema(example = 50)]
     limit: Option<usize>,
 }
 
 // Define the response for /search/
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct SearchResponse {
     results: Vec<SearchResult>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct SearchResult {
     id: i64,
     target_uuid: String,
@@ -195,11 +200,29 @@ async fn get_embedding_from_image(
 // --- Handlers ---
 
 // Handler for GET / route, returns 200 OK
+#[utoipa::path(
+    get,
+    path = "/health/",
+    tag = "health",
+    responses(
+        (status = 200, description = "Health check OK")
+    )
+)]
 pub async fn health_check() -> axum::http::StatusCode {
     axum::http::StatusCode::OK
 }
 
 // Handler for POST /register/
+#[utoipa::path(
+    post,
+    path = "/register/",
+    tag = "registration",
+    request_body = RegisterPayload,
+    responses(
+        (status = 201, description = "Registro criado com sucesso"),
+        (status = 400, description = "Payload inválido ou erro de registro")
+    )
+)]
 pub async fn register(
     State(state): State<AppState>, // Extract state
     Json(payload): Json<RegisterPayload>,
@@ -313,6 +336,17 @@ pub async fn register(
 }
 
 // Handler for POST /search/
+#[utoipa::path(
+    post,
+    path = "/search/",
+    tag = "search",
+    request_body = SearchPayload,
+    responses(
+        (status = 200, description = "Busca realizada", body = SearchResponse),
+        (status = 400, description = "Payload inválido ou erro na busca"),
+        (status = 422, description = "Rosto não encontrado ou mais de um rosto presente")
+    )
+)]
 pub async fn search(
     State(state): State<AppState>,
     Json(payload): Json<SearchPayload>,
@@ -374,6 +408,19 @@ pub async fn search(
     Ok(Json(SearchResponse { results }))
 }
 
+// Handler for GET /details/
+#[utoipa::path(
+    get,
+    path = "/details/{id}/",
+    tag = "details",
+    params(
+        ("id" = i64, Path, description = "ID do item para detalhes")
+    ),
+    responses(
+        (status = 200, description = "Detalhes encontrados", body = Value),
+        (status = 404, description = "Item não encontrado")
+    )
+)]
 pub async fn details(
     State(state): State<AppState>,
     Path(id): Path<i64>,

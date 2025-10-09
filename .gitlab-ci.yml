@@ -1,40 +1,25 @@
-stages:
-  - build
-
-variables:
-  # O REGISTRY já contém o nome da imagem base.
-  # Ex: registry.gitlab.com/meu-grupo/meu-projeto
-  REGISTRY: "${CI_REGISTRY_IMAGE}"
-  # Usamos o nome da branch como tag da imagem
-  IMAGE_TAG: "${CI_COMMIT_REF_SLUG}"
-  IMAGE_TAG_LATEST: "latest"
-
-# Renomeado o job para maior clareza
 build_multi_arch_manual_main:
   stage: build
   image: docker:24.0.5
   services:
     - name: docker:24.0.5-dind
       alias: docker
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_HOST: "tcp://docker:2376"
+    DOCKER_TLS_VERIFY: "1"
+    DOCKER_CERT_PATH: "/certs/client"
   before_script:
     # Login no registro de contêiner do GitLab
     - echo "Logging into GitLab Container Registry..."
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-
     # Habilita o binfmt_misc para emulação multi-arquitetura via QEMU
-    # Essencial para o runner (geralmente amd64) conseguir construir para arm64
     - docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-
-    # Cria e ativa um builder do Buildx
-    - echo "Setting up Docker Buildx..."
-    #- docker buildx create --use --name multi-arch-builder
-    - docker context create dind-context
-    - docker buildx create --use --name multi-arch-builder dind-context
+    # Configura o Buildx
+    - docker buildx create --use --name multi-arch-builder
     - docker buildx inspect --bootstrap
-
   script:
-    # Constrói E envia a imagem para as arquiteturas especificadas em um único passo.
-    # O Buildx cria um "manifest list" que aponta para as imagens de cada arquitetura.
+    # Constrói E envia a imagem para as arquiteturas especificadas
     - echo "Building and pushing multi-architecture image for linux/amd64 and linux/arm64..."
     - |
       docker buildx build \
@@ -42,13 +27,9 @@ build_multi_arch_manual_main:
         --tag "$REGISTRY:$IMAGE_TAG" \
         --tag "$REGISTRY:$IMAGE_TAG_LATEST" \
         --pull \
-        --push .
-
+        --push \
+        .
     - echo "Multi-architecture image pushed successfully!"
-
   rules:
-    # A MÁGICA ACONTECE AQUI:
-    # 1. 'if': Só permite que esta regra seja válida para a branch 'main'.
-    # 2. 'when: manual': Transforma o job em uma ação manual (precisa de clique).
     - if: '$CI_COMMIT_REF_NAME == "main"'
       when: manual
