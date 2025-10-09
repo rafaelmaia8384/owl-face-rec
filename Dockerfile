@@ -11,6 +11,4 @@ RUN cargo build --release
 FROM debian:bookworm-slim
 
 COPY --from=builder /app/target/release/owl-face-rec /usr/local/bin/owl-face-rec
-
-USER nonroot:nonroot
 CMD ["/usr/local/bin/owl-face-rec"]
