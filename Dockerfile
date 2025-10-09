@@ -2,11 +2,9 @@ FROM rustlang/rust:nightly AS builder
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release && rm -rf src
-
 COPY . .
-RUN touch src/force-compile.txt && cargo build --release
+
+RUN cargo build --release
 
 FROM debian:bookworm-slim
 
