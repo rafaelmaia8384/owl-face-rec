@@ -12,7 +12,8 @@ ARG TARGETPLATFORM
 
 WORKDIR /app
 
-ENV CARGO_BUILD_JOBS=1
+# ENV CARGO_BUILD_JOBS=1
+RUN cargo install cross --git https://github.com/cross-rs/cross
 
 # Instala as dependências de build com base na arquitetura de destino
 RUN apt-get update && \
@@ -47,7 +48,7 @@ COPY . .
 RUN case ${TARGETPLATFORM} in \
         "linux/arm64") \
             # Executa a cross-compilação para ARM64
-            cargo build --release --target aarch64-unknown-linux-gnu && \
+            cross build --release --target aarch64-unknown-linux-gnu && \
             # Copia o binário para um local padrão para facilitar a próxima etapa
             cp ./target/aarch64-unknown-linux-gnu/release/owlfacerec ./owlfacerec \
             ;; \
