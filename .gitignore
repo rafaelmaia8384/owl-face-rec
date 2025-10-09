@@ -5,6 +5,7 @@ desktop.ini
 .env
 
 models/*.onnx
+models/*.bin
 
 ## Editor
 *.swp
