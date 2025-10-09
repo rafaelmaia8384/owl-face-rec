@@ -376,17 +376,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         s3_client: Arc::new(s3_client),
     };
 
-    let app: Router = Router::new() // Sem <AppState> explícito ainda
+    let swagger_ui = SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi());
+
+    let app = Router::new()
         .route("/", get(handlers::health_check))
         .route("/health/", get(handlers::health_check))
         .route("/register/", post(handlers::register))
         .route("/search/", post(handlers::search))
         .route("/details/:id/", get(handlers::details))
-        // Merge SwaggerUi AQUI (stateless com stateless)
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()));
-
-    // ADICIONE .with_state() UMA VEZ, no final
-    let app = app.with_state(app_state);
+        .with_state(app_state);
 
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port = env::var("PORT").unwrap_or_else(|_| "3000".to_string());
@@ -394,8 +392,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr: SocketAddr = addr_str.parse().expect("Invalid address format");
 
     tracing::info!(address = %addr, "listening on address");
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app).await?;
 
     Ok(())
 }
