@@ -1,7 +1,20 @@
+image: docker:20.10.17
+
+services:
+  - docker:20.10.17-dind
+
 stages:
   - validate
   - build
   - deploy
+
+variables:
+  REGISTRY: "${CI_REGISTRY_IMAGE}"
+  IMAGE_TAG: "${CI_COMMIT_REF_SLUG}"
+  IMAGE: "${REGISTRY}:${IMAGE_TAG}"
+  LATEST_IMAGE: "${REGISTRY}:latest"
+  CARGO_HOME: "${CI_PROJECT_DIR}/.cargo"
+  RUSTUP_HOME: "${CI_PROJECT_DIR}/.rustup"
 
 cache:
   key: rust-cache-${CI_COMMIT_REF_SLUG}
@@ -9,24 +22,6 @@ cache:
     - target/
     - .cargo/
   policy: pull-push
-
-variables:
-  CARGO_HOME: "${CI_PROJECT_DIR}/.cargo"
-  RUSTUP_HOME: "${CI_PROJECT_DIR}/.rustup"
-
-# Setup Rust
-.setup_rust: &setup_rust
-  before_script:
-    - echo "OK"
-    # - export CARGO_HOME="${CI_PROJECT_DIR}/.cargo"
-    # - export RUSTUP_HOME="${CI_PROJECT_DIR}/.rustup"
-    # - |
-    #   if ! command -v rustup &> /dev/null; then
-    #     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-    #     source "${CARGO_HOME}/env"
-    #   fi
-    # - rustc --version
-    # - cargo --version
 
 validate_merge:
   stage: validate
@@ -52,11 +47,10 @@ validate_merge:
 # Build Stage
 build:stage:
   stage: build
-  <<: *setup_rust
   script:
-    - echo "OK"
-    # - cargo build --verbose
-    # - ls -la target/debug/
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker build -t "$IMAGE" .
+    - docker push "$IMAGE"
   artifacts:
     paths:
       - target/debug/
