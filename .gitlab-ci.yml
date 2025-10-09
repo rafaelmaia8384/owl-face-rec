@@ -1,27 +1,25 @@
-stages:
-  - build
-
-variables:
-  REGISTRY: "${CI_REGISTRY_IMAGE}"
-  IMAGE_TAG: "${CI_COMMIT_REF_SLUG}"
-  IMAGE_TAG_LATEST: "latest"
-
 build_multi_arch_manual_main:
   stage: build
   image: docker:24.0.5
   services:
     - name: docker:24.0.5-dind
       alias: docker
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_HOST: "tcp://docker:2376"
+    DOCKER_TLS_VERIFY: "1"
+    DOCKER_CERT_PATH: "/certs/client"
   before_script:
+    # Login no registro de contêiner do GitLab
     - echo "Logging into GitLab Container Registry..."
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    # Habilita o binfmt_misc para emulação multi-arquitetura via QEMU
     - docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-    - echo "Setting up Docker Buildx..."
-    - docker context create dind-context
-    - docker buildx create --use --name multi-arch-builder dind-context
+    # Configura o Buildx
+    - docker buildx create --use --name multi-arch-builder
     - docker buildx inspect --bootstrap
-
   script:
+    # Constrói E envia a imagem para as arquiteturas especificadas
     - echo "Building and pushing multi-architecture image for linux/amd64 and linux/arm64..."
     - |
       docker buildx build \
@@ -29,10 +27,9 @@ build_multi_arch_manual_main:
         --tag "$REGISTRY:$IMAGE_TAG" \
         --tag "$REGISTRY:$IMAGE_TAG_LATEST" \
         --pull \
-        --push .
-
+        --push \
+        .
     - echo "Multi-architecture image pushed successfully!"
-
   rules:
     - if: '$CI_COMMIT_REF_NAME == "main"'
       when: manual
