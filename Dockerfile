@@ -12,7 +12,7 @@ ARG TARGETPLATFORM
 
 WORKDIR /app
 
-ENV CARGO_BUILD_JOBS=2
+ENV CARGO_BUILD_JOBS=1
 
 # Instala as dependências de build com base na arquitetura de destino
 RUN apt-get update && \
