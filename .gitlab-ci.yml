@@ -75,18 +75,18 @@ deploy:stage:
         echo '🔑 Logando no Docker Registry...'
         docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
 
-        echo '⬇️ Puxando a imagem $IMAGE_TAG'
-        docker pull $IMAGE_TAG
+        echo '⬇️ Puxando a imagem $IMAGE'
+        docker pull $IMAGE
 
         echo '🛑 Parando container antigo (se existir)'
-        docker stop $(docker ps -aq)
-        docker rm $(docker ps -aq)
+        docker stop $(docker ps -aq) || true
+        docker rm $(docker ps -aq) || true
 
         echo '▶️ Rodando container novo'
         docker run -d \
           --name owlfacerec \
           -p $STAGE_PORT:3000 \
-          $IMAGE_TAG
+          $IMAGE
       "
   needs: ["build:stage"]
   when: always
@@ -135,18 +135,18 @@ deploy:prod:
         echo '🔑 Logando no Docker Registry...'
         docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
 
-        echo '⬇️ Puxando a imagem $IMAGE_TAG'
-        docker pull $IMAGE_TAG
+        echo '⬇️ Puxando a imagem $IMAGE'
+        docker pull $IMAGE
 
         echo '🛑 Parando container antigo (se existir)'
-        docker stop $(docker ps -aq)
-        docker rm $(docker ps -aq)
+        docker stop $(docker ps -aq) || true
+        docker rm $(docker ps -aq) || true
 
         echo '▶️ Rodando container novo'
         docker run -d \
           --name owlfacerec \
           -p $PROD_PORT:3000 \
-          $IMAGE_TAG
+          $IMAGE
       "
   needs: ["build:prod"]
   when: manual
