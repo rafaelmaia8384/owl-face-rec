@@ -27,7 +27,7 @@ validate:
       fi
   rules:
     # Só roda se a branch não for main nem stage
-    - if: '$CI_COMMIT_REF_NAME != "main" && $CI_COMMIT_REF_NAME != "stage"'
+    - if: '$CI_COMMIT_REF_NAME != "main" && $CI_COMMIT_REF_NAME != "stage" && $CI_PIPELINE_SOURCE == "merge_request_event"'
       when: on_success
     # Opcional: não rodar em outros casos
     - when: never
