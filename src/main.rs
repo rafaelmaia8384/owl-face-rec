@@ -188,10 +188,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         postgres_user, postgres_password, postgres_host, postgres_port, postgres_db
     );
 
-    tracing::info!(
-        "Connecting to target database '{}' with a connection pool...",
-        postgres_db
-    );
+    tracing::info!("Initiating connection pool at {}...", target_db_url);
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&target_db_url)
