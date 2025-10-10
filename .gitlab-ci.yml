@@ -4,6 +4,7 @@ services:
   - docker:20.10.17-dind
 
 stages:
+  - validate
   - build
   - deploy
 
@@ -11,6 +12,25 @@ variables:
   REGISTRY: "${CI_REGISTRY_IMAGE}"
   IMAGE_TAG: "${CI_COMMIT_REF_SLUG}"
   IMAGE: "${REGISTRY}:${IMAGE_TAG}"
+
+validate:
+  stage: validate
+  script:
+    - echo "🔍 Validando branch..."
+    # Falha se a branch de destino do merge request não for 'stage'
+    - |
+      if [ "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" != "stage" ]; then
+        echo "❌ Merge Request inválido: a branch de destino deve ser 'stage'"
+        exit 1
+      else
+        echo "✅ Merge Request válido."
+      fi
+  rules:
+    # Só roda se a branch não for main nem stage
+    - if: '$CI_COMMIT_REF_NAME != "main" && $CI_COMMIT_REF_NAME != "stage"'
+      when: on_success
+    # Opcional: não rodar em outros casos
+    - when: never
 
 # Build Stage
 build:stage:
