@@ -38,8 +38,8 @@ ARG MINIO_SECRET_KEY
 ARG MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK
 ARG MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK
 
-RUN wget -O models/arcfaceresnet100-8.onnx "$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK" && \
-    wget -O models/seeta_fd_frontal_v1.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"
+RUN wget -O /app/models/arcfaceresnet100-8.onnx "$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK" && \
+    wget -O /app/models/seeta_fd_frontal_v1.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"
 
 RUN echo "PORT=$PORT" >> .env && \
     echo "LOG_LEVEL=$LOG_LEVEL" >> .env && \
