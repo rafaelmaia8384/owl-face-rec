@@ -1,7 +1,8 @@
 image: docker:20.10.17
 
 services:
-  - docker:20.10.17-dind
+  - name: docker:20.10.17-dind
+    pull_policy: if-not-present
 
 stages:
   - validate
@@ -67,7 +68,10 @@ deploy:stage:
   stage: deploy
   script:
     - |
-      ssh -o StrictHostKeyChecking=no sti@$STAGE_HOST "
+      mkdir -p ~/.ssh
+      echo "$STAGE_SERVER_PRIVATE_KEY" > ~/.ssh/id_ed25519
+      chmod 600 ~/.ssh/id_ed25519
+      ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no sti@$STAGE_HOST "
         echo '🔑 Logando no Docker Registry...'
         docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
 
@@ -81,7 +85,7 @@ deploy:stage:
         echo '▶️ Rodando container novo'
         docker run -d \
           --name owlfacerec \
-          -p 3000:3000 \
+          -p $STAGE_PORT:3000 \
           $IMAGE_TAG
       "
   needs: ["build:stage"]
@@ -94,6 +98,7 @@ build:prod:
   stage: build
   script:
     - rm -f .env && touch .env
+    - echo "PORT=$PROD_PORT" >> .env
     - echo "LOG_LEVEL=$PROD_LOG_LEVEL" >> .env
     - echo "POSTGRES_HOST=$PROD_POSTGRES_HOST" >> .env
     - echo "POSTGRES_DB=$PROD_POSTGRES_DB" >> .env
@@ -123,7 +128,10 @@ deploy:prod:
   stage: deploy
   script:
     - |
-      ssh -o StrictHostKeyChecking=no sti@$PROD_HOST "
+      mkdir -p ~/.ssh
+      echo "$PROD_SERVER_PRIVATE_KEY" > ~/.ssh/id_ed25519
+      chmod 600 ~/.ssh/id_ed25519
+      ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no sti@$PROD_HOST "
         echo '🔑 Logando no Docker Registry...'
         docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
 
@@ -137,7 +145,7 @@ deploy:prod:
         echo '▶️ Rodando container novo'
         docker run -d \
           --name owlfacerec \
-          -p 3000:3000 \
+          -p $PROD_PORT:3000 \
           $IMAGE_TAG
       "
   needs: ["build:prod"]
