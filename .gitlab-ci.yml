@@ -42,6 +42,7 @@ build:stage:
     - echo "LOG_LEVEL=$STAGE_LOG_LEVEL" >> .env
     - echo "POSTGRES_HOST=$STAGE_POSTGRES_HOST" >> .env
     - echo "POSTGRES_DB=$STAGE_POSTGRES_DB" >> .env
+    - echo "POSTGRES_PORT=$STAGE_POSTGRES_PORT" >> .env
     - echo "POSTGRES_USER=$STAGE_POSTGRES_USER" >> .env
     - echo "POSTGRES_PASSWORD=$STAGE_POSTGRES_PASSWORD" >> .env
     - echo "POSTGRES_PORT=$STAGE_POSTGRES_PORT" >> .env
@@ -102,6 +103,7 @@ build:prod:
     - echo "LOG_LEVEL=$PROD_LOG_LEVEL" >> .env
     - echo "POSTGRES_HOST=$PROD_POSTGRES_HOST" >> .env
     - echo "POSTGRES_DB=$PROD_POSTGRES_DB" >> .env
+    - echo "POSTGRES_PORT=$PROD_POSTGRES_PORT" >> .env
     - echo "POSTGRES_USER=$PROD_POSTGRES_USER" >> .env
     - echo "POSTGRES_PASSWORD=$PROD_POSTGRES_PASSWORD" >> .env
     - echo "POSTGRES_PORT=$PROD_POSTGRES_PORT" >> .env
