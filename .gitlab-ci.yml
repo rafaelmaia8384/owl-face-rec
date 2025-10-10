@@ -37,8 +37,6 @@ validate:
 build:stage:
   stage: build
   script:
-    - wget -O models/arcfaceresnet100-8.onnx "$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK"
-    - wget -O models/seeta_fd_frontal_v1.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - |
       docker build \
@@ -58,6 +56,8 @@ build:stage:
       --build-arg MINIO_BUCKET=$STAGE_MINIO_BUCKET \
       --build-arg MINIO_ACCESS_KEY=$STAGE_MINIO_ACCESS_KEY \
       --build-arg MINIO_SECRET_KEY=$STAGE_MINIO_SECRET_KEY \
+      --build-arg MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK=$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK \
+      --build-arg MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK=$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK \
       -t "$IMAGE" .
     - docker push "$IMAGE"
   rules:
@@ -97,8 +97,6 @@ deploy:stage:
 build:prod:
   stage: build
   script:
-    - wget -O models/arcfaceresnet100-8.onnx "$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK"
-    - wget -O models/seeta_fd_frontal_v1.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - |
       docker build \
@@ -118,6 +116,8 @@ build:prod:
       --build-arg MINIO_BUCKET=$PROD_MINIO_BUCKET \
       --build-arg MINIO_ACCESS_KEY=$PROD_MINIO_ACCESS_KEY \
       --build-arg MINIO_SECRET_KEY=$PROD_MINIO_SECRET_KEY \
+      --build-arg MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK=$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK \
+      --build-arg MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK=$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK \
       -t "$IMAGE" .
     - docker push "$IMAGE"
   rules:
