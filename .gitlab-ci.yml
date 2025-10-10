@@ -79,8 +79,8 @@ deploy:stage:
         docker pull $IMAGE
 
         echo '🛑 Parando container antigo (se existir)'
-        docker stop $(docker ps -aq) || true
-        docker rm $(docker ps -aq) || true
+        docker ps -aq | xargs -r docker stop
+        docker ps -aq | xargs -r docker rm
 
         echo '▶️ Rodando container novo'
         docker run -d \
@@ -139,8 +139,8 @@ deploy:prod:
         docker pull $IMAGE
 
         echo '🛑 Parando container antigo (se existir)'
-        docker stop $(docker ps -aq) || true
-        docker rm $(docker ps -aq) || true
+        docker ps -aq | xargs -r docker stop
+        docker ps -aq | xargs -r docker rm
 
         echo '▶️ Rodando container novo'
         docker run -d \
