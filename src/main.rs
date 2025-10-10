@@ -343,7 +343,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         s3_client: Arc::new(s3_client),
     };
 
-    let swagger_ui = SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi());
+    let swagger_ui = SwaggerUi::new("/swagger").url("/api-docs/openapi.json", ApiDoc::openapi());
 
     let app = Router::new()
         .merge(swagger_ui)
