@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y \
 COPY Cargo.toml Cargo.lock ./
 COPY . .
 
+COPY models/ /app/models/
+
 RUN cargo build --release
 
 FROM debian:bookworm-slim
@@ -16,6 +18,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 \
     ca-certificates \
+    git \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
@@ -38,9 +41,12 @@ ARG MINIO_SECRET_KEY
 ARG MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK
 ARG MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK
 
-RUN mkdir -p /app/models && \
-    wget -O /app/models/arcfaceresnet100-8.onnx "$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK" && \
-    wget -O /app/models/seeta_fd_frontal_v1.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"
+--> baixar o projeto git com os modelos? Antes deve-se verificar se os modelos já estão presentes na pasta models/
+--> talvez usar apenas uma variavel chamada MODELS_GIT_REPOSOTIRY ?
+
+# RUN mkdir -p /app/models && \
+#     wget -O /app/models/arcfaceresnet100-8.onnx "$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK" && \
+#     wget -O /app/models/seeta_fd_frontal_v1.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"
 
 RUN echo "PORT=$PORT" >> .env && \
     echo "LOG_LEVEL=$LOG_LEVEL" >> .env && \
@@ -58,8 +64,11 @@ RUN echo "PORT=$PORT" >> .env && \
     echo "MINIO_BUCKET=$MINIO_BUCKET" >> .env && \
     echo "MINIO_ACCESS_KEY=$MINIO_ACCESS_KEY" >> .env && \
     echo "MINIO_SECRET_KEY=$MINIO_SECRET_KEY" >> .env && \
+    echo "MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK=$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK" >> .env && \
+    echo "MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK=$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK" >> .env && \
     sed -i '/=$/d' .env
 
+COPY --from=builder /app/models /app/models
 COPY --from=builder /app/target/release/owl-face-rec /usr/local/bin/owl-face-rec
 
 CMD ["/usr/local/bin/owl-face-rec"]
