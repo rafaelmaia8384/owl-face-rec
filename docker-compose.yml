@@ -24,5 +24,7 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET:-owlfacerec}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK: ${MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK:-http://localhost}
+      MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK: ${MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK:-http://localhost}
     volumes:
       - ./models:/app/models

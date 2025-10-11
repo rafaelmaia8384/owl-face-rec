@@ -1,3 +1,158 @@
-build:
+image: docker:20.10.17
+
+services:
+  - name: docker:20.10.17-dind
+    pull_policy: if-not-present
+
+stages:
+  - validate
+  - build
+  - deploy
+
+variables:
+  REGISTRY: "${CI_REGISTRY_IMAGE}"
+  IMAGE_TAG: "${CI_COMMIT_REF_SLUG}"
+  IMAGE: "${REGISTRY}:${IMAGE_TAG}"
+
+validate:
+  stage: validate
   script:
-    - echo "Mock de build"
+    - echo "🔍 Validando branch..."
+    # Falha se a branch de destino do merge request não for 'stage'
+    - |
+      if [ "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" != "stage" ]; then
+        echo "❌ Merge Request inválido: a branch de destino deve ser 'stage'"
+        exit 1
+      else
+        echo "✅ Merge Request válido."
+      fi
+  rules:
+    # Só roda se a branch não for main nem stage
+    - if: '$CI_COMMIT_REF_NAME != "main" && $CI_COMMIT_REF_NAME != "stage" && $CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: on_success
+    # Opcional: não rodar em outros casos
+    - when: never
+
+# Build Stage
+build:stage:
+  stage: build
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - 'wget --header="JOB-TOKEN: $CI_JOB_TOKEN" -O models/arcfaceresnet100-8.onnx "$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK"'
+    - 'wget --header="JOB-TOKEN: $CI_JOB_TOKEN" -O models/seeta_fd_frontal_v1.0.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"'
+    - |
+      docker build \
+      --build-arg PORT=$STAGE_PORT \
+      --build-arg LOG_LEVEL=$STAGE_LOG_LEVEL \
+      --build-arg POSTGRES_HOST=$STAGE_POSTGRES_HOST \
+      --build-arg POSTGRES_DB=$STAGE_POSTGRES_DB \
+      --build-arg POSTGRES_PORT=$STAGE_POSTGRES_PORT \
+      --build-arg POSTGRES_USER=$STAGE_POSTGRES_USER \
+      --build-arg POSTGRES_PASSWORD=$STAGE_POSTGRES_PASSWORD \
+      --build-arg RUSTFACE_MIN_FACE_SIZE=$STAGE_RUSTFACE_MIN_FACE_SIZE \
+      --build-arg RUSTFACE_SCORE_THRESH=$STAGE_RUSTFACE_SCORE_THRESH \
+      --build-arg RUSTFACE_PYRAMID_SCALE_FACTOR=$STAGE_RUSTFACE_PYRAMID_SCALE_FACTOR \
+      --build-arg RUSTFACE_SLIDE_WINDOW_STEP_X=$STAGE_RUSTFACE_SLIDE_WINDOW_STEP_X \
+      --build-arg RUSTFACE_SLIDE_WINDOW_STEP_Y=$STAGE_RUSTFACE_SLIDE_WINDOW_STEP_Y \
+      --build-arg MINIO_ENDPOINT=$STAGE_MINIO_ENDPOINT \
+      --build-arg MINIO_BUCKET=$STAGE_MINIO_BUCKET \
+      --build-arg MINIO_ACCESS_KEY=$STAGE_MINIO_ACCESS_KEY \
+      --build-arg MINIO_SECRET_KEY=$STAGE_MINIO_SECRET_KEY \
+      --build-arg MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK=$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK \
+      --build-arg MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK=$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK \
+      -t "$IMAGE" .
+    - docker push "$IMAGE"
+  rules:
+    - if: $CI_COMMIT_REF_NAME == "stage" && $CI_PIPELINE_SOURCE != "merge_request_event"
+
+# Deploy Stage (automático)
+deploy:stage:
+  stage: deploy
+  script:
+    - |
+      mkdir -p ~/.ssh
+      echo "$STAGE_SERVER_PRIVATE_KEY" > ~/.ssh/id_ed25519
+      chmod 600 ~/.ssh/id_ed25519
+      ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no sti@$STAGE_HOST "
+        echo '🔑 Logando no Docker Registry...'
+        docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+
+        echo '⬇️ Puxando a imagem $IMAGE'
+        docker pull $IMAGE
+
+        echo '🛑 Parando container antigo (se existir)'
+        docker ps -aq | xargs -r docker stop
+        docker ps -aq | xargs -r docker rm
+
+        echo '▶️ Rodando container novo'
+        docker run -d \
+          --name owlfacerec \
+          -p $STAGE_PORT:3000 \
+          $IMAGE
+      "
+  needs: ["build:stage"]
+  when: always
+  rules:
+    - if: $CI_COMMIT_REF_NAME == "stage" && $CI_PIPELINE_SOURCE != "merge_request_event"
+
+# Build Main (release)
+build:prod:
+  stage: build
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - 'wget --header="JOB-TOKEN: $CI_JOB_TOKEN" -O models/arcfaceresnet100-8.onnx "$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK"'
+    - 'wget --header="JOB-TOKEN: $CI_JOB_TOKEN" -O models/seeta_fd_frontal_v1.0.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"'
+    - |
+      docker build \
+      --build-arg PORT=$PROD_PORT \
+      --build-arg LOG_LEVEL=$PROD_LOG_LEVEL \
+      --build-arg POSTGRES_HOST=$PROD_POSTGRES_HOST \
+      --build-arg POSTGRES_DB=$PROD_POSTGRES_DB \
+      --build-arg POSTGRES_PORT=$PROD_POSTGRES_PORT \
+      --build-arg POSTGRES_USER=$PROD_POSTGRES_USER \
+      --build-arg POSTGRES_PASSWORD=$PROD_POSTGRES_PASSWORD \
+      --build-arg RUSTFACE_MIN_FACE_SIZE=$PROD_RUSTFACE_MIN_FACE_SIZE \
+      --build-arg RUSTFACE_SCORE_THRESH=$PROD_RUSTFACE_SCORE_THRESH \
+      --build-arg RUSTFACE_PYRAMID_SCALE_FACTOR=$PROD_RUSTFACE_PYRAMID_SCALE_FACTOR \
+      --build-arg RUSTFACE_SLIDE_WINDOW_STEP_X=$PROD_RUSTFACE_SLIDE_WINDOW_STEP_X \
+      --build-arg RUSTFACE_SLIDE_WINDOW_STEP_Y=$PROD_RUSTFACE_SLIDE_WINDOW_STEP_Y \
+      --build-arg MINIO_ENDPOINT=$PROD_MINIO_ENDPOINT \
+      --build-arg MINIO_BUCKET=$PROD_MINIO_BUCKET \
+      --build-arg MINIO_ACCESS_KEY=$PROD_MINIO_ACCESS_KEY \
+      --build-arg MINIO_SECRET_KEY=$PROD_MINIO_SECRET_KEY \
+      --build-arg MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK=$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK \
+      --build-arg MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK=$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK \
+      -t "$IMAGE" .
+    - docker push "$IMAGE"
+  rules:
+    - if: $CI_COMMIT_REF_NAME == "main" && $CI_PIPELINE_SOURCE != "merge_request_event"
+
+# Deploy Main (manual)
+deploy:prod:
+  stage: deploy
+  script:
+    - |
+      mkdir -p ~/.ssh
+      echo "$PROD_SERVER_PRIVATE_KEY" > ~/.ssh/id_ed25519
+      chmod 600 ~/.ssh/id_ed25519
+      ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no sti@$PROD_HOST "
+        echo '🔑 Logando no Docker Registry...'
+        docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+
+        echo '⬇️ Puxando a imagem $IMAGE'
+        docker pull $IMAGE
+
+        echo '🛑 Parando container antigo (se existir)'
+        docker ps -aq | xargs -r docker stop
+        docker ps -aq | xargs -r docker rm
+
+        echo '▶️ Rodando container novo'
+        docker run -d \
+          --name owlfacerec \
+          -p $PROD_PORT:3000 \
+          $IMAGE
+      "
+  needs: ["build:prod"]
+  when: manual
+  rules:
+    - if: $CI_COMMIT_REF_NAME == "main" && $CI_PIPELINE_SOURCE != "merge_request_event"
