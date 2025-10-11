@@ -39,7 +39,7 @@ build:stage:
   script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - 'wget --header="JOB-TOKEN: $CI_JOB_TOKEN" -O models/arcfaceresnet100-8.onnx "$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK"'
-    - 'wget --header="JOB-TOKEN: $CI_JOB_TOKEN" -O models/seeta_fd_frontal_v1.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"'
+    - 'wget --header="JOB-TOKEN: $CI_JOB_TOKEN" -O models/seeta_fd_frontal_v1.0.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"'
     - |
       docker build \
       --build-arg PORT=$STAGE_PORT \
@@ -101,7 +101,7 @@ build:prod:
   script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - 'wget --header="JOB-TOKEN: $CI_JOB_TOKEN" -O models/arcfaceresnet100-8.onnx "$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK"'
-    - 'wget --header="JOB-TOKEN: $CI_JOB_TOKEN" -O models/seeta_fd_frontal_v1.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"'
+    - 'wget --header="JOB-TOKEN: $CI_JOB_TOKEN" -O models/seeta_fd_frontal_v1.0.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"'
     - |
       docker build \
       --build-arg PORT=$PROD_PORT \
