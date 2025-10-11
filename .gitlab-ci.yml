@@ -63,7 +63,7 @@ build:stage:
       -t "$IMAGE" .
     - docker push "$IMAGE"
   rules:
-    - if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "stage" && $CI_COMMIT_REF_NAME == "stage"
+    - if: $CI_COMMIT_REF_NAME == "stage" && $CI_PIPELINE_SOURCE != "merge_request_event"
 
 # Deploy Stage (automático)
 deploy:stage:
@@ -93,7 +93,7 @@ deploy:stage:
   needs: ["build:stage"]
   when: always
   rules:
-    - if: $CI_COMMIT_REF_NAME == "stage"
+    - if: $CI_COMMIT_REF_NAME == "stage" && $CI_PIPELINE_SOURCE != "merge_request_event"
 
 # Build Main (release)
 build:prod:
@@ -125,7 +125,7 @@ build:prod:
       -t "$IMAGE" .
     - docker push "$IMAGE"
   rules:
-    - if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main" && $CI_COMMIT_REF_NAME == "main"
+    - if: $CI_COMMIT_REF_NAME == "main" && $CI_PIPELINE_SOURCE != "merge_request_event"
 
 # Deploy Main (manual)
 deploy:prod:
@@ -155,4 +155,4 @@ deploy:prod:
   needs: ["build:prod"]
   when: manual
   rules:
-    - if: $CI_COMMIT_REF_NAME == "main"
+    - if: $CI_COMMIT_REF_NAME == "main" && $CI_PIPELINE_SOURCE != "merge_request_event"
