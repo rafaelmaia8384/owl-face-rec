@@ -63,7 +63,7 @@ build:stage:
       -t "$IMAGE" .
     - docker push "$IMAGE"
   rules:
-    - if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "stage"
+    - if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "stage" && $CI_COMMIT_REF_NAME == "stage"
 
 # Deploy Stage (automático)
 deploy:stage:
@@ -125,7 +125,7 @@ build:prod:
       -t "$IMAGE" .
     - docker push "$IMAGE"
   rules:
-    - if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"
+    - if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main" && &CI_COMMIT_REF_NAME == "main"
 
 # Deploy Main (manual)
 deploy:prod:
