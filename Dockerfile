@@ -41,9 +41,6 @@ ARG MINIO_SECRET_KEY
 ARG MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK
 ARG MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK
 
---> baixar o projeto git com os modelos? Antes deve-se verificar se os modelos já estão presentes na pasta models/
---> talvez usar apenas uma variavel chamada MODELS_GIT_REPOSOTIRY ?
-
 # RUN mkdir -p /app/models && \
 #     wget -O /app/models/arcfaceresnet100-8.onnx "$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK" && \
 #     wget -O /app/models/seeta_fd_frontal_v1.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"
