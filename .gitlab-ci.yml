@@ -37,29 +37,28 @@ validate:
 build:stage:
   stage: build
   script:
-    - rm -f .env && touch .env
-    - echo "PORT=$STAGE_PORT" >> .env
-    - echo "LOG_LEVEL=$STAGE_LOG_LEVEL" >> .env
-    - echo "POSTGRES_HOST=$STAGE_POSTGRES_HOST" >> .env
-    - echo "POSTGRES_DB=$STAGE_POSTGRES_DB" >> .env
-    - echo "POSTGRES_PORT=$STAGE_POSTGRES_PORT" >> .env
-    - echo "POSTGRES_USER=$STAGE_POSTGRES_USER" >> .env
-    - echo "POSTGRES_PASSWORD=$STAGE_POSTGRES_PASSWORD" >> .env
-    - echo "POSTGRES_PORT=$STAGE_POSTGRES_PORT" >> .env
-    - echo "RUSTFACE_MIN_FACE_SIZE=$STAGE_RUSTFACE_MIN_FACE_SIZE" >> .env
-    - echo "RUSTFACE_SCORE_THRESH=$STAGE_RUSTFACE_SCORE_THRESH" >> .env
-    - echo "RUSTFACE_PYRAMID_SCALE_FACTOR=$STAGE_RUSTFACE_PYRAMID_SCALE_FACTOR" >> .env
-    - echo "RUSTFACE_SLIDE_WINDOW_STEP_X=$STAGE_RUSTFACE_SLIDE_WINDOW_STEP_X" >> .env
-    - echo "RUSTFACE_SLIDE_WINDOW_STEP_Y=$STAGE_RUSTFACE_SLIDE_WINDOW_STEP_Y" >> .env
-    - echo "MINIO_ENDPOINT=$STAGE_MINIO_ENDPOINT" >> .env
-    - echo "MINIO_BUCKET=$STAGE_MINIO_BUCKET" >> .env
-    - echo "MINIO_ACCESS_KEY=$STAGE_MINIO_ACCESS_KEY" >> .env
-    - echo "MINIO_SECRET_KEY=$STAGE_MINIO_SECRET_KEY" >> .env
-    - sed -i.bak '/=$/d' .env
-    - wget -O models/arcfaceresnet100-8.onnx "$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK"
-    - wget -O models/seeta_fd_frontal_v1.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker build -t "$IMAGE" .
+    - |
+      docker build \
+      --build-arg PORT=$STAGE_PORT \
+      --build-arg LOG_LEVEL=$STAGE_LOG_LEVEL \
+      --build-arg POSTGRES_HOST=$STAGE_POSTGRES_HOST \
+      --build-arg POSTGRES_DB=$STAGE_POSTGRES_DB \
+      --build-arg POSTGRES_PORT=$STAGE_POSTGRES_PORT \
+      --build-arg POSTGRES_USER=$STAGE_POSTGRES_USER \
+      --build-arg POSTGRES_PASSWORD=$STAGE_POSTGRES_PASSWORD \
+      --build-arg RUSTFACE_MIN_FACE_SIZE=$STAGE_RUSTFACE_MIN_FACE_SIZE \
+      --build-arg RUSTFACE_SCORE_THRESH=$STAGE_RUSTFACE_SCORE_THRESH \
+      --build-arg RUSTFACE_PYRAMID_SCALE_FACTOR=$STAGE_RUSTFACE_PYRAMID_SCALE_FACTOR \
+      --build-arg RUSTFACE_SLIDE_WINDOW_STEP_X=$STAGE_RUSTFACE_SLIDE_WINDOW_STEP_X \
+      --build-arg RUSTFACE_SLIDE_WINDOW_STEP_Y=$STAGE_RUSTFACE_SLIDE_WINDOW_STEP_Y \
+      --build-arg MINIO_ENDPOINT=$STAGE_MINIO_ENDPOINT \
+      --build-arg MINIO_BUCKET=$STAGE_MINIO_BUCKET \
+      --build-arg MINIO_ACCESS_KEY=$STAGE_MINIO_ACCESS_KEY \
+      --build-arg MINIO_SECRET_KEY=$STAGE_MINIO_SECRET_KEY \
+      --build-arg MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK=$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK \
+      --build-arg MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK=$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK \
+      -t "$IMAGE" .
     - docker push "$IMAGE"
   rules:
     - if: $CI_COMMIT_REF_NAME == "stage"
@@ -98,31 +97,29 @@ deploy:stage:
 build:prod:
   stage: build
   script:
-    - rm -f .env && touch .env
-    - echo "PORT=$PROD_PORT" >> .env
-    - echo "LOG_LEVEL=$PROD_LOG_LEVEL" >> .env
-    - echo "POSTGRES_HOST=$PROD_POSTGRES_HOST" >> .env
-    - echo "POSTGRES_DB=$PROD_POSTGRES_DB" >> .env
-    - echo "POSTGRES_PORT=$PROD_POSTGRES_PORT" >> .env
-    - echo "POSTGRES_USER=$PROD_POSTGRES_USER" >> .env
-    - echo "POSTGRES_PASSWORD=$PROD_POSTGRES_PASSWORD" >> .env
-    - echo "POSTGRES_PORT=$PROD_POSTGRES_PORT" >> .env
-    - echo "RUSTFACE_MIN_FACE_SIZE=$PROD_RUSTFACE_MIN_FACE_SIZE" >> .env
-    - echo "RUSTFACE_SCORE_THRESH=$PROD_RUSTFACE_SCORE_THRESH" >> .env
-    - echo "RUSTFACE_PYRAMID_SCALE_FACTOR=$PROD_RUSTFACE_PYRAMID_SCALE_FACTOR" >> .env
-    - echo "RUSTFACE_SLIDE_WINDOW_STEP_X=$PROD_RUSTFACE_SLIDE_WINDOW_STEP_X" >> .env
-    - echo "RUSTFACE_SLIDE_WINDOW_STEP_Y=$PROD_RUSTFACE_SLIDE_WINDOW_STEP_Y" >> .env
-    - echo "MINIO_ENDPOINT=$PROD_MINIO_ENDPOINT" >> .env
-    - echo "MINIO_BUCKET=$PROD_MINIO_BUCKET" >> .env
-    - echo "MINIO_ACCESS_KEY=$PROD_MINIO_ACCESS_KEY" >> .env
-    - echo "MINIO_SECRET_KEY=$PROD_MINIO_SECRET_KEY" >> .env
-    - sed -i.bak '/=$/d' .env
-    - wget -O models/arcfaceresnet100-8.onnx "$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK"
-    - wget -O models/seeta_fd_frontal_v1.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker build -t "$IMAGE" .
+    - |
+      docker build \
+      --build-arg PORT=$PROD_PORT \
+      --build-arg LOG_LEVEL=$PROD_LOG_LEVEL \
+      --build-arg POSTGRES_HOST=$PROD_POSTGRES_HOST \
+      --build-arg POSTGRES_DB=$PROD_POSTGRES_DB \
+      --build-arg POSTGRES_PORT=$PROD_POSTGRES_PORT \
+      --build-arg POSTGRES_USER=$PROD_POSTGRES_USER \
+      --build-arg POSTGRES_PASSWORD=$PROD_POSTGRES_PASSWORD \
+      --build-arg RUSTFACE_MIN_FACE_SIZE=$PROD_RUSTFACE_MIN_FACE_SIZE \
+      --build-arg RUSTFACE_SCORE_THRESH=$PROD_RUSTFACE_SCORE_THRESH \
+      --build-arg RUSTFACE_PYRAMID_SCALE_FACTOR=$PROD_RUSTFACE_PYRAMID_SCALE_FACTOR \
+      --build-arg RUSTFACE_SLIDE_WINDOW_STEP_X=$PROD_RUSTFACE_SLIDE_WINDOW_STEP_X \
+      --build-arg RUSTFACE_SLIDE_WINDOW_STEP_Y=$PROD_RUSTFACE_SLIDE_WINDOW_STEP_Y \
+      --build-arg MINIO_ENDPOINT=$PROD_MINIO_ENDPOINT \
+      --build-arg MINIO_BUCKET=$PROD_MINIO_BUCKET \
+      --build-arg MINIO_ACCESS_KEY=$PROD_MINIO_ACCESS_KEY \
+      --build-arg MINIO_SECRET_KEY=$PROD_MINIO_SECRET_KEY \
+      --build-arg MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK=$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK \
+      --build-arg MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK=$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK \
+      -t "$IMAGE" .
     - docker push "$IMAGE"
-
   rules:
     - if: $CI_COMMIT_REF_NAME == "main"
 
