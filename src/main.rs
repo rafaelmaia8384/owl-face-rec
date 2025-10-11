@@ -81,6 +81,12 @@ impl SafeDetector {
 unsafe impl Send for SafeDetector {}
 unsafe impl Sync for SafeDetector {}
 
+impl Default for EmbeddingsStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EmbeddingsStore {
     pub fn new() -> Self {
         Self {
@@ -182,10 +188,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         postgres_user, postgres_password, postgres_host, postgres_port, postgres_db
     );
 
-    tracing::info!(
-        "Connecting to target database '{}' with a connection pool...",
-        postgres_db
-    );
+    tracing::info!("Initiating connection on database {}...", postgres_db);
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&target_db_url)
@@ -337,7 +340,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         s3_client: Arc::new(s3_client),
     };
 
-    let swagger_ui = SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi());
+    let swagger_ui = SwaggerUi::new("/swagger").url("/api-docs/openapi.json", ApiDoc::openapi());
 
     let app = Router::new()
         .merge(swagger_ui)

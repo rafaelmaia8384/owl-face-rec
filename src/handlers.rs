@@ -6,14 +6,12 @@ use axum::{
 };
 use base64::{engine::general_purpose, Engine as _};
 use image::{DynamicImage, GenericImageView, ImageBuffer, ImageFormat, Rgb};
-use md5;
 use minio::s3::segmented_bytes::SegmentedBytes;
 use minio::s3::types::S3Api;
 use ndarray::{Array, Ix4};
 use ort::{inputs, session::Session, session::SessionOutputs, value::Value};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx;
 use sqlx::Row;
 use std::env;
 use std::io::Cursor;
@@ -194,7 +192,7 @@ async fn get_embedding_from_image(
     })?;
     let duration = start.elapsed(); // Calculate duration
     tracing::info!(duration = ?duration, "get_embedding_from_image"); // Log duration
-    Ok(res?)
+    res
 }
 
 // --- Handlers ---
