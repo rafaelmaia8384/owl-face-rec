@@ -38,7 +38,6 @@ build:stage:
   stage: build
   script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - 'echo "CI_JOB_TOKEN: $CI_JOB_TOKEN"'
     - 'wget --header="JOB-TOKEN: $CI_JOB_TOKEN" -O models/arcfaceresnet100-8.onnx "$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK"'
     - 'wget --header="JOB-TOKEN: $CI_JOB_TOKEN" -O models/seeta_fd_frontal_v1.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"'
     - |
@@ -101,7 +100,6 @@ build:prod:
   stage: build
   script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - 'echo "CI_JOB_TOKEN: $CI_JOB_TOKEN"'
     - 'wget --header="JOB-TOKEN: $CI_JOB_TOKEN" -O models/arcfaceresnet100-8.onnx "$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK"'
     - 'wget --header="JOB-TOKEN: $CI_JOB_TOKEN" -O models/seeta_fd_frontal_v1.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"'
     - |
