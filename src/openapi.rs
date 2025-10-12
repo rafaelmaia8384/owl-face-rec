@@ -20,14 +20,14 @@ use crate::handlers;
         )
     ),
     tags(
-        (name = "health", description = "Health check endpoints"),
-        (name = "registration", description = "User registration endpoints"),
-        (name = "search", description = "Face search endpoints"),
-        (name = "details", description = "User details endpoints")
+        (name = "health", description = "Health check endpoint"),
+        (name = "registration", description = "Face registration endpoint"),
+        (name = "search", description = "Face search endpoint"),
+        (name = "details", description = "Target details endpoint")
     ),
     info(
-        title = "OwlFaceRec API",
-        description = "API para reconhecimento facial usando ArcFace",
+        title = "OwlFaceRec",
+        description = "Desenvolvido pela Diretoria de Inteligência da PMPB",
         version = "1.0.0"
     )
 )]

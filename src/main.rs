@@ -223,6 +223,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .execute(&pool)
     .await?;
 
+    sqlx::query(
+        r#"
+        ALTER TABLE targets
+        ADD CONSTRAINT unique_uuid_image_key UNIQUE (uuid, image_key);
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
     tracing::info!("'targets' table is ready");
 
     // Initialize ONNX Runtime environment globally
