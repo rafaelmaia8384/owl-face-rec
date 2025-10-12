@@ -91,7 +91,7 @@ deploy:stage:
           $IMAGE
       "
   needs: ["build:stage"]
-  when: always
+  when: on_success
   rules:
     - if: $CI_COMMIT_REF_NAME == "stage" && $CI_PIPELINE_SOURCE != "merge_request_event"
 
@@ -153,6 +153,6 @@ deploy:prod:
           $IMAGE
       "
   needs: ["build:prod"]
-  when: manual
+  when: on_success
   rules:
     - if: $CI_COMMIT_REF_NAME == "main" && $CI_PIPELINE_SOURCE != "merge_request_event"

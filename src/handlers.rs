@@ -282,7 +282,8 @@ pub async fn register(
         r#"
         INSERT INTO targets (uuid, embeddings, image_key, origin, extra)
         VALUES ($1, $2, $3, $4, $5)
-        RETURNING id
+        RETURNING 
+        ON CONFLICT (uuid, image_key) DO NOTHING
         "#,
     )
     .bind(target_uuid)
