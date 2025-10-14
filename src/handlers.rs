@@ -262,19 +262,6 @@ pub async fn register(
 
     let image_bytes = buffer.into_inner();
     let image_key = format!("{:x}.webp", md5::compute(&image_bytes));
-    let segmented_bytes = SegmentedBytes::from(Bytes::from(image_bytes));
-
-    tracing::info!(%target_uuid, %origin, "Sending image do bucket...");
-    state
-        .s3_client
-        .put_object(minio_bucket, &image_key, segmented_bytes)
-        .send()
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to upload image to MinIO");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    tracing::info!(%target_uuid, "Image successfully sent");
 
     // Store the embedding in the database
     tracing::info!(%target_uuid, %origin, "Storing embedding in the database...");
@@ -282,8 +269,8 @@ pub async fn register(
         r#"
         INSERT INTO targets (uuid, embeddings, image_key, origin, extra)
         VALUES ($1, $2, $3, $4, $5)
-        RETURNING 
         ON CONFLICT (uuid, image_key) DO NOTHING
+        RETURNING id
         "#,
     )
     .bind(target_uuid)
@@ -291,17 +278,48 @@ pub async fn register(
     .bind(&image_key)
     .bind(&origin)
     .bind(extra)
-    // .execute(&state.db_pool)
-    .fetch_one(&state.db_pool)
+    .fetch_optional(&state.db_pool)
     .await
     {
-        Ok(record) => {
+        Ok(None) => {
+            tracing::info!("Target already exists, skipping insert");
+            Ok(StatusCode::CREATED)
+        }
+        Ok(Some(record)) => {
             let id: i64 = record.try_get("id").map_err(|e| {
                 tracing::error!(error = %e, "Failed to get id from record");
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
 
             tracing::info!(%target_uuid, "Successfully stored embedding in the database");
+
+            let segmented_bytes = SegmentedBytes::from(Bytes::from(image_bytes));
+
+            tracing::info!(%target_uuid, %origin, "Sending image to bucket...");
+
+            if let Err(e) = state
+                .s3_client
+                .put_object(minio_bucket, &image_key, segmented_bytes)
+                .send()
+                .await
+            {
+                if let Err(db_err) = sqlx::query(
+                    r#"
+                    DELETE FROM targets WHERE id = $1
+                    "#,
+                )
+                .bind(id)
+                .execute(&state.db_pool)
+                .await
+                {
+                    tracing::error!(error = %db_err, "Failed to delete target after MinIO upload error");
+                }
+
+                tracing::error!(error = %e, "Failed to upload image to MinIO");
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+
+            tracing::info!(%target_uuid, "Image successfully sent");
 
             // Add the embedding to in-memory storage
             tracing::info!(%target_uuid, %origin, "Adding embedding to in-memory store...");
@@ -357,7 +375,7 @@ pub async fn search(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    tracing::debug!("Received search request");
+    tracing::info!("Received search request");
 
     // Get query embedding using separated functions
     let img = decode_base64_to_image(&payload.image_base64)?;
