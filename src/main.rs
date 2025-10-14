@@ -138,6 +138,10 @@ impl EmbeddingsStore {
         results
     }
 
+    pub fn remove(&mut self, id: i64) {
+        self.entries.retain(|entry| entry.id != id);
+    }
+
     pub fn len(&self) -> usize {
         self.entries.len()
     }
@@ -225,8 +229,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     sqlx::query(
         r#"
-        ALTER TABLE targets
-        ADD CONSTRAINT unique_uuid_image_key UNIQUE (uuid, image_key);
+        CREATE UNIQUE INDEX IF NOT EXISTS unique_uuid_image_key
+        ON targets (uuid, image_key);
         "#,
     )
     .execute(&pool)
