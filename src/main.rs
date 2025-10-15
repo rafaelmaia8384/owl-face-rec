@@ -167,8 +167,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     // Get log level from LOG_LEVEL first, then RUST_LOG, or default to "debug"
-    let log_level = std::env::var("LOG_LEVEL")
-        .or_else(|_| std::env::var("RUST_LOG"))
+    let log_level = env::var("LOG_LEVEL")
+        .or_else(|_| env::var("RUST_LOG"))
         .unwrap_or_else(|_| "debug".into());
 
     tracing_subscriber::registry()
