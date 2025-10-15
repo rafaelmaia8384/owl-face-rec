@@ -40,9 +40,7 @@ build:stage:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - 'wget --header="JOB-TOKEN: $CI_JOB_TOKEN" -O models/arcfaceresnet100-8.onnx "$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK"'
     - 'wget --header="JOB-TOKEN: $CI_JOB_TOKEN" -O models/seeta_fd_frontal_v1.0.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"'
-    - |
-      docker build \
-      -t "$IMAGE" .
+    - docker build -t "$IMAGE" .
     - docker push "$IMAGE"
   rules:
     - if: $CI_COMMIT_REF_NAME == "stage" && $CI_PIPELINE_SOURCE != "merge_request_event"
@@ -102,27 +100,7 @@ build:prod:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - 'wget --header="JOB-TOKEN: $CI_JOB_TOKEN" -O models/arcfaceresnet100-8.onnx "$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK"'
     - 'wget --header="JOB-TOKEN: $CI_JOB_TOKEN" -O models/seeta_fd_frontal_v1.0.bin "$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK"'
-    - |
-      docker build \
-      --build-arg PORT=$PROD_PORT \
-      --build-arg LOG_LEVEL=$PROD_LOG_LEVEL \
-      --build-arg POSTGRES_HOST=$PROD_POSTGRES_HOST \
-      --build-arg POSTGRES_DB=$PROD_POSTGRES_DB \
-      --build-arg POSTGRES_PORT=$PROD_POSTGRES_PORT \
-      --build-arg POSTGRES_USER=$PROD_POSTGRES_USER \
-      --build-arg POSTGRES_PASSWORD=$PROD_POSTGRES_PASSWORD \
-      --build-arg RUSTFACE_MIN_FACE_SIZE=$PROD_RUSTFACE_MIN_FACE_SIZE \
-      --build-arg RUSTFACE_SCORE_THRESH=$PROD_RUSTFACE_SCORE_THRESH \
-      --build-arg RUSTFACE_PYRAMID_SCALE_FACTOR=$PROD_RUSTFACE_PYRAMID_SCALE_FACTOR \
-      --build-arg RUSTFACE_SLIDE_WINDOW_STEP_X=$PROD_RUSTFACE_SLIDE_WINDOW_STEP_X \
-      --build-arg RUSTFACE_SLIDE_WINDOW_STEP_Y=$PROD_RUSTFACE_SLIDE_WINDOW_STEP_Y \
-      --build-arg MINIO_ENDPOINT=$PROD_MINIO_ENDPOINT \
-      --build-arg MINIO_BUCKET=$PROD_MINIO_BUCKET \
-      --build-arg MINIO_ACCESS_KEY=$PROD_MINIO_ACCESS_KEY \
-      --build-arg MINIO_SECRET_KEY=$PROD_MINIO_SECRET_KEY \
-      --build-arg MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK=$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK \
-      --build-arg MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK=$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK \
-      -t "$IMAGE" .
+    - docker build -t "$IMAGE" .
     - docker push "$IMAGE"
   rules:
     - if: $CI_COMMIT_REF_NAME == "main" && $CI_PIPELINE_SOURCE != "merge_request_event"
@@ -149,6 +127,24 @@ deploy:prod:
         echo '▶️ Rodando container novo'
         docker run -d \
           --name owlfacerec \
+          -e PORT=$PROD_PORT \
+          -e LOG_LEVEL=$PROD_LOG_LEVEL \
+          -e POSTGRES_HOST=$PROD_POSTGRES_HOST \
+          -e POSTGRES_DB=$PROD_POSTGRES_DB \
+          -e POSTGRES_PORT=$PROD_POSTGRES_PORT \
+          -e POSTGRES_USER=$PROD_POSTGRES_USER \
+          -e POSTGRES_PASSWORD=$PROD_POSTGRES_PASSWORD \
+          -e RUSTFACE_MIN_FACE_SIZE=$PROD_RUSTFACE_MIN_FACE_SIZE \
+          -e RUSTFACE_SCORE_THRESH=$PROD_RUSTFACE_SCORE_THRESH \
+          -e RUSTFACE_PYRAMID_SCALE_FACTOR=$PROD_RUSTFACE_PYRAMID_SCALE_FACTOR \
+          -e RUSTFACE_SLIDE_WINDOW_STEP_X=$PROD_RUSTFACE_SLIDE_WINDOW_STEP_X \
+          -e RUSTFACE_SLIDE_WINDOW_STEP_Y=$PROD_RUSTFACE_SLIDE_WINDOW_STEP_Y \
+          -e MINIO_ENDPOINT=$PROD_MINIO_ENDPOINT \
+          -e MINIO_BUCKET=$PROD_MINIO_BUCKET \
+          -e MINIO_ACCESS_KEY=$PROD_MINIO_ACCESS_KEY \
+          -e MINIO_SECRET_KEY=$PROD_MINIO_SECRET_KEY \
+          -e MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK=$MODEL_ARCFACERESNET100_8_DOWNLOAD_LINK \
+          -e MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK=$MODEL_SEETA_FD_FRONTAL_DOWNLOAD_LINK \
           -p $PROD_PORT:3000 \
           $IMAGE
       "
