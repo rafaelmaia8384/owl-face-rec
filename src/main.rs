@@ -163,7 +163,7 @@ pub struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Load environment variables and initialize tracing
+    // Load environment variables from .env file (if exists)
     dotenvy::dotenv().ok();
 
     // Get log level from LOG_LEVEL first, then RUST_LOG, or default to "debug"

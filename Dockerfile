@@ -1,7 +1,7 @@
 FROM rustlang/rust:nightly AS builder
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -18,8 +18,6 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 \
     ca-certificates \
-    git \
-    wget \
     && rm -rf /var/lib/apt/lists/*
 
 # ARG PORT
