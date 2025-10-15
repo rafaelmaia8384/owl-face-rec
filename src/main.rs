@@ -114,12 +114,20 @@ impl EmbeddingsStore {
     pub fn find_similar(
         &self,
         query: &[f32],
+        origin: Option<&str>,
         threshold: f32,
         limit: usize,
     ) -> Vec<(i64, Uuid, String, String, f32)> {
         let mut results: Vec<(i64, Uuid, String, String, f32)> = self
             .entries
             .par_iter()
+            .filter(|entry| {
+                // Se origin for Some, filtra; se None, aceita todos
+                match origin {
+                    Some(o) => entry.origin == o,
+                    None => true,
+                }
+            })
             .map(|entry| {
                 let similarity = cosine_similarity(query, &entry.embedding);
                 (

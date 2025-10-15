@@ -39,7 +39,8 @@ pub struct RegisterPayload {
 #[derive(Deserialize, ToSchema)]
 pub struct SearchPayload {
     image_base64: String,
-    #[schema(example = 0.7)]
+    origin: Option<String>,
+    #[schema(example = 0.9)]
     threshold: Option<f32>,
     #[schema(example = 50)]
     limit: Option<usize>,
@@ -388,8 +389,9 @@ pub async fn search(
     );
 
     // Search for similar embeddings in memory
-    let threshold = payload.threshold.unwrap_or(0.7); // Default threshold
-    let limit = payload.limit.unwrap_or(10); // Default limit
+    let origin = payload.origin;
+    let threshold = payload.threshold.unwrap_or(0.9); // Default threshold
+    let limit = payload.limit.unwrap_or(50); // Default limit
 
     tracing::info!(
         "Searching for similar embeddings with threshold={} and limit={}",
@@ -405,7 +407,8 @@ pub async fn search(
         }
     };
 
-    let similar_embeddings = embeddings_store.find_similar(&embedding_vec, threshold, limit);
+    let similar_embeddings =
+        embeddings_store.find_similar(&embedding_vec, origin.as_deref(), threshold, limit);
     tracing::info!("Found {} similar embeddings", similar_embeddings.len());
 
     // Format results

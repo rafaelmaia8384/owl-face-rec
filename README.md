@@ -44,8 +44,8 @@ The system consists of:
   ```json
   {
     "image_base64": "iVBORw0KGgoAAAANSUhEUgAA...",
-    "threshold": 0.7,
-    "limit": 10
+    "threshold": 0.9,
+    "limit": 50
   }
   ```
 - **Response**:
