@@ -246,7 +246,8 @@ pub async fn register(
     let target_uuid = payload.target_uuid;
     let origin = payload.origin.clone();
     let extra = payload.extra.clone().unwrap_or(serde_json::Value::Null);
-    tracing::debug!(%target_uuid, %origin, "Received registration request");
+
+    tracing::info!(%target_uuid, %origin, "Received registration request");
 
     // Get embedding using separated functions
     let img = decode_base64_to_image(&payload.image_base64)?;
