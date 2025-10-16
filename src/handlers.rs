@@ -35,6 +35,11 @@ pub struct RegisterPayload {
     extra: Option<serde_json::Value>,
 }
 
+#[derive(serde::Serialize, ToSchema)]
+pub struct RegisterResponse {
+    image_key: String,
+}
+
 // Define the request payload for /search/
 #[derive(Deserialize, ToSchema)]
 pub struct SearchPayload {
@@ -225,7 +230,7 @@ pub async fn health_check() -> axum::http::StatusCode {
 pub async fn register(
     State(state): State<AppState>, // Extract state
     Json(payload): Json<RegisterPayload>,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<Json<RegisterResponse>, StatusCode> {
     let start = Instant::now(); // Record start time
 
     // --- Payload Validation ---
@@ -285,7 +290,7 @@ pub async fn register(
     {
         Ok(None) => {
             tracing::info!("Target already exists, skipping insert");
-            Ok(StatusCode::CREATED)
+            Ok(Json(RegisterResponse { image_key }))
         }
         Ok(Some(record)) => {
             let id: i64 = record.try_get("id").map_err(|e| {
@@ -342,10 +347,10 @@ pub async fn register(
             tracing::info!(%target_uuid, "Successfully added embedding to in-memory store");
             tracing::info!(%target_uuid, "Total embeddings in memory: {}", embeddings_store.len());
 
-            let duration = start.elapsed(); // Calculate duration
-            tracing::info!(%target_uuid, duration = ?duration, "Registration successful"); // Log duration
+            let duration = start.elapsed();
+            tracing::info!(%target_uuid, duration = ?duration, "Registration successful");
 
-            Ok(StatusCode::CREATED)
+            Ok(Json(RegisterResponse { image_key }))
         }
         Err(e) => {
             tracing::error!(%target_uuid, error = %e, "Failed to store embedding in database");
