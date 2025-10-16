@@ -370,7 +370,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/register/", post(handlers::register))
         .route("/search/", post(handlers::search))
         .route("/details/:id/", get(handlers::details))
-        // .route("/delete/:image_key/", delete(handlers::delete))
+        .route("/delete/:image_key/", delete(handlers::delete))
         .with_state(app_state);
 
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());

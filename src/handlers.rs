@@ -11,7 +11,6 @@ use minio::s3::types::S3Api;
 use ndarray::{Array, Ix4};
 use ort::{inputs, session::Session, session::SessionOutputs, value::Value};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use sqlx::Row;
 use std::env;
 use std::io::Cursor;
@@ -29,25 +28,43 @@ use crate::SafeDetector;
 pub struct RegisterPayload {
     #[schema(value_type = String, format = "uuid")]
     target_uuid: Uuid,
+    #[schema(value_type = String, example = "iVBORw0KGgoAAAANSUhEUg...")]
     image_base64: String,
+    #[schema(value_type = String, example = "PMPB:BACINF")]
     origin: String,
-    #[schema(value_type = Json)]
+    #[schema(value_type = Object)]
     extra: Option<serde_json::Value>,
 }
 
 #[derive(serde::Serialize, ToSchema)]
 pub struct RegisterResponse {
+    #[schema(value_type = String, example = "58e4b2952958d11e402dd7ea10c3f541.webp")]
     image_key: String,
+}
+
+#[derive(serde::Serialize, ToSchema)]
+pub struct DetailsResponse {
+    #[schema(value_type = i64, example = 7)]
+    id: i64,
+    uuid: Uuid,
+    #[schema(value_type = String, example = "PMPB:BACINF")]
+    origin: String,
+    #[schema(value_type = String, example = "58e4b2952958d11e402dd7ea10c3f541.webp")]
+    image_key: String,
+    #[schema(value_type = Object)]
+    extra: Option<serde_json::Value>,
 }
 
 // Define the request payload for /search/
 #[derive(Deserialize, ToSchema)]
 pub struct SearchPayload {
+    #[schema(value_type = String, example = "iVBORw0KGgoAAAANSUhEUg...")]
     image_base64: String,
+    #[schema(value_type = String, example = "PMPB:BACINF")]
     origin: Option<String>,
-    #[schema(example = 0.9)]
+    #[schema(value_type = f32, example = 0.9)]
     threshold: Option<f32>,
-    #[schema(example = 50)]
+    #[schema(value_type = usize, example = 50)]
     limit: Option<usize>,
 }
 
@@ -59,10 +76,15 @@ pub struct SearchResponse {
 
 #[derive(Serialize, ToSchema)]
 pub struct SearchResult {
+    #[schema(value_type = i64, example = 7)]
     pub id: i64,
+    #[schema(value_type = String, format = "uuid")]
     pub target_uuid: String,
+    #[schema(value_type = f32, example = 0.92837153)]
     pub similarity: f32,
+    #[schema(value_type = String, example = "PMPB:BACINF")]
     pub origin: String,
+    #[schema(value_type = String, example = "58e4b2952958d11e402dd7ea10c3f541.webp")]
     pub image_key: String,
 }
 
@@ -223,8 +245,10 @@ pub async fn health_check() -> axum::http::StatusCode {
     tag = "registration",
     request_body = RegisterPayload,
     responses(
-        (status = 201, description = "Registro criado com sucesso"),
-        (status = 400, description = "Payload inválido ou erro de registro")
+        (status = 200, description = "Registro criado com sucesso", body = RegisterResponse),
+        (status = 400, description = "Payload inválido ou erro de registro"),
+        (status = 422, description = "Rosto não encontrado ou mais de um rosto presente"),
+        (status = 500, description = "Problema inesperado no servidor"),
     )
 )]
 pub async fn register(
@@ -368,7 +392,8 @@ pub async fn register(
     responses(
         (status = 200, description = "Busca realizada", body = SearchResponse),
         (status = 400, description = "Payload inválido ou erro na busca"),
-        (status = 422, description = "Rosto não encontrado ou mais de um rosto presente")
+        (status = 422, description = "Rosto não encontrado ou mais de um rosto presente"),
+        (status = 500, description = "Problema inesperado no servidor"),
     )
 )]
 pub async fn search(
@@ -443,14 +468,15 @@ pub async fn search(
         ("id" = i64, Path, description = "ID do item para detalhes")
     ),
     responses(
-        (status = 200, description = "Detalhes encontrados", body = Value),
-        (status = 404, description = "Item não encontrado")
+        (status = 200, description = "Detalhes encontrados", body = DetailsResponse),
+        (status = 404, description = "Item não encontrado"),
+        (status = 500, description = "Problema inesperado no servidor"),
     )
 )]
 pub async fn details(
     State(state): State<AppState>,
     Path(id): Path<i64>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<DetailsResponse>, StatusCode> {
     // consulta no banco
     let row =
         sqlx::query(r#"SELECT id, uuid, origin, image_key, extra FROM targets WHERE id = $1"#)
@@ -470,16 +496,79 @@ pub async fn details(
             let image_key: String = record.try_get("image_key").unwrap_or_default();
             let extra: Option<serde_json::Value> = record.try_get("extra").unwrap_or(None);
 
-            Ok(Json(json!({
-                "id": id,
-                "uuid": uuid,
-                "origin": origin,
-                "image_key": image_key,
-                "extra": extra
-            })))
+            Ok(Json(DetailsResponse {
+                id,
+                uuid,
+                origin,
+                image_key,
+                extra,
+            }))
         }
         None => Err(StatusCode::NOT_FOUND),
     }
+}
+
+pub async fn delete(
+    State(state): State<AppState>,
+    Path(image_key): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    tracing::info!(%image_key, "Received delete request");
+
+    // 1️⃣ Buscar o registro no banco
+    let row = sqlx::query(r#"SELECT id FROM targets WHERE image_key = $1"#)
+        .bind(&image_key)
+        .fetch_optional(&state.db_pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Database query failed during delete");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let Some(record) = row else {
+        tracing::info!(%image_key, "No record found for this image_key");
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    let id: i64 = record.try_get("id").unwrap_or_default();
+
+    // 2️⃣ Excluir do banco
+    sqlx::query(r#"DELETE FROM targets WHERE id = $1"#)
+        .bind(id)
+        .execute(&state.db_pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to delete record from database");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    tracing::info!(%image_key, %id, "Deleted record from database");
+
+    // 3️⃣ Remover do MinIO
+    if let Err(e) = state
+        .s3_client
+        .delete_object(
+            std::env::var("MINIO_BUCKET").expect("MINIO_BUCKET must be set"),
+            &image_key,
+        )
+        .send()
+        .await
+    {
+        tracing::error!(error = %e, %image_key, "Failed to delete object from MinIO");
+    } else {
+        tracing::info!(%image_key, "Deleted object from MinIO");
+    }
+
+    {
+        let mut store = state.embeddings_store.lock().map_err(|e| {
+            tracing::error!(error = %e, "Failed to lock embeddings_store");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        store.remove(id);
+        tracing::info!(%id, %image_key, "Removed embedding from in-memory store");
+    }
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 fn preprocess_image(
