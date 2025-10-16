@@ -289,7 +289,7 @@ pub async fn register(
     .await
     {
         Ok(None) => {
-            tracing::info!("Target already exists, skipping insert");
+            tracing::info!("Face already linked to target, skipping insert");
             Ok(Json(RegisterResponse { image_key }))
         }
         Ok(Some(record)) => {
