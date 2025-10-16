@@ -14,9 +14,11 @@ use crate::handlers;
     components(
         schemas(
             handlers::RegisterPayload,
+            handlers::RegisterResponse,
             handlers::SearchPayload,
             handlers::SearchResponse,
-            handlers::SearchResult
+            handlers::SearchResult,
+            handlers::DetailsResponse,
         )
     ),
     tags(
